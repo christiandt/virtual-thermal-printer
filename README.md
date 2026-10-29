@@ -270,6 +270,17 @@ The web UI is available at `http://localhost:8000` and the TCP socket on port `9
 
 GitHub Actions then builds platform binaries and the desktop app (Linux, macOS, Windows) and a Docker image, and creates a GitHub Release.
 
+The release is published with whatever was built, even if a build failed or
+never got a runner (macOS runners are sometimes short); the run summary lists
+what is missing. **Re-run failed jobs** on that run adds the missing files to
+the same release.
+
+From the Actions tab, **Run workflow** on *Release* without a tag is a dry run:
+it builds everything and publishes nothing. With an existing tag it builds that
+tag's code and creates or completes its release, using the workflow on the
+branch it is started from. That is how a tag pushed before a workflow fix gets
+released, since a tag push always runs the workflow of the tagged commit.
+
 ## Scripts
 
 | Command | Description |
