@@ -50,6 +50,40 @@ describe('JobLog', () => {
 		expect(log.get(1)?.blocks).toHaveLength(6)
 	})
 
+	it('ends the line on a dot feed (ESC J)', () => {
+		const log = new JobLog()
+		const recorder = log.start('epos')
+		recorder.add(text('A'))
+		recorder.add({ type: 'command', name: 'Print and Feed Paper', details: { feed: 48 } })
+		recorder.add(text('B'))
+		recorder.finish()
+		expect(log.list()[0].text).toBe('A\nB')
+	})
+
+	it('keeps page-mode text only when the page is printed', () => {
+		const log = new JobLog()
+		const recorder = log.start('socket')
+		const command = (name: string) => recorder.add({ type: 'command', name })
+		command('Select Page Mode')
+		recorder.add(text('cancelled'))
+		command('Cancel Page Data')
+		recorder.add(text('page'))
+		command('Print Page') // ESC FF prints and keeps the page
+		recorder.add(text(' more'))
+		command('Form Feed') // FF prints it again and leaves page mode
+		command('Select Page Mode')
+		recorder.add(text('discarded'))
+		command('Select Standard Mode')
+		command('Select Page Mode')
+		recorder.add(text('reset'))
+		command('Initialize Printer')
+		command('Select Page Mode')
+		recorder.add(text('never printed'))
+		command('Cut Paper')
+		recorder.finish()
+		expect(log.list()[0]).toMatchObject({ text: 'page\npage more\n', cuts: 1 })
+	})
+
 	it('does not record a job that decoded nothing', () => {
 		const log = new JobLog()
 		log.start('socket').finish()

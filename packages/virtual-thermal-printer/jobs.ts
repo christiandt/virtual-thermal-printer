@@ -39,15 +39,34 @@ export class JobRecorder {
 		this.#keep = keep
 	}
 
+	// Page-mode text, held until the page is printed: like the renderer, a
+	// page that is cancelled or left unprinted never reaches the paper.
+	#page: string | null = null
+
 	add(block: ParsedEscPosBlock): void {
 		const job = this.#job
 		job.blocks.push(block)
 		if (block.type === 'text') {
-			job.text += block.content.replace(/\r/g, '')
+			this.#write(block.content.replace(/\r/g, ''))
 		} else if (block.type === 'image') {
-			job.text += `[image ${block.width}×${block.height}]\n`
+			this.#write(`[image ${block.width}×${block.height}]\n`)
 		} else if (block.name === 'Print and Feed Lines') {
-			job.text += '\n'.repeat(Number(block.details?.lines ?? 0))
+			this.#write('\n'.repeat(Number(block.details?.lines ?? 0)))
+		} else if (block.name === 'Print and Feed Paper') {
+			// ESC J n prints the row and feeds n dots: the row ends here.
+			this.#endLine()
+		} else if (block.name === 'Select Page Mode') {
+			this.#page ??= ''
+		} else if (block.name === 'Print Page') {
+			// ESC FF prints the page and keeps it for further printing.
+			if (this.#page !== null) this.#printPage(this.#page)
+		} else if (block.name === 'Form Feed') {
+			if (this.#page !== null) this.#printPage(this.#page)
+			this.#page = null
+		} else if (block.name === 'Cancel Page Data') {
+			if (this.#page !== null) this.#page = ''
+		} else if (block.name === 'Select Standard Mode' || block.name === 'Initialize Printer') {
+			this.#page = null
 		} else if (block.name === 'Cut Paper') {
 			job.cuts++
 		} else if (
@@ -56,6 +75,23 @@ export class JobRecorder {
 		) {
 			job.drawerPulses++
 		}
+	}
+
+	#write(text: string): void {
+		if (this.#page !== null) this.#page += text
+		else this.#job.text += text
+	}
+
+	#endLine(): void {
+		if (this.#page !== null) {
+			if (this.#page && !this.#page.endsWith('\n')) this.#page += '\n'
+		} else if (this.#job.text && !this.#job.text.endsWith('\n')) {
+			this.#job.text += '\n'
+		}
+	}
+
+	#printPage(page: string): void {
+		this.#job.text += page && !page.endsWith('\n') ? `${page}\n` : page
 	}
 
 	/** Record the job; a socket connection that decoded nothing is not one. */
