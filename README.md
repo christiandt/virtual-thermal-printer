@@ -33,6 +33,42 @@ Print jobs rendered in the web interface, laid out like on an 80 mm printer
 |---|---|
 | [`escpos-decoder`](packages/escpos-decoder) | Transforms a stream of raw ESC/POS bytes into typed TypeScript blocks |
 | [`virtual-thermal-printer`](packages/virtual-thermal-printer) | HTTP + WebSocket + TCP server with browser UI |
+| [`desktop`](packages/desktop) | The printer as a desktop app (Electron) for macOS, Windows and Linux |
+
+## Desktop App
+
+Download the app for your system from the
+[releases](https://github.com/christiandt/virtual-thermal-printer/releases) and
+start it: the printer runs inside the app and its window shows the web
+interface. Point your POS at the address under **Connect your POS** in the
+panel (also in the window title): ePOS on `http://localhost:8000`, HTTPS on
+`https://localhost:8443`, raw ESC/POS on `localhost:9100`. If a port is
+already in use (another printer, a Docker container), the app takes the next
+free one and shows that instead. Only one copy runs at a time; closing the
+window stops the printer.
+
+| System | Download | First start |
+|---|---|---|
+| macOS (Apple silicon / Intel) | `…-mac-arm64.dmg` / `…-mac-x64.dmg` (or `.zip`) | The app is not signed with an Apple Developer ID yet, so macOS refuses to open it. After moving it to Applications, run `xattr -dr com.apple.quarantine "/Applications/Virtual Thermal Printer.app"` once. |
+| Windows | `…-win-x64.exe` (installer) or `…-win-portable-x64.exe` | SmartScreen warns about an unknown publisher: choose **More info → Run anyway**. |
+| Linux | the `.AppImage` | `chmod +x` the file, then run it. |
+
+The HTTPS certificate is generated on first start and kept with the app's
+data, so it only has to be accepted once in the POS's browser.
+
+To build it yourself, after `npm ci` and `npm run build` in the repository
+root:
+
+```bash
+cd packages/desktop
+npm ci
+npm start          # run it from source
+npm run pack       # an unpacked app for this machine, in release/
+npm run dist       # the installers for this system, in release/
+```
+
+The desktop package has its own lockfile and is not part of the npm
+workspace, so installing the printer does not download Electron.
 
 ## Local Development
 
@@ -230,7 +266,7 @@ The web UI is available at `http://localhost:8000` and the TCP socket on port `9
    git push && git push --tags
    ```
 
-GitHub Actions then builds platform binaries (Linux, macOS, Windows) and a Docker image, and creates a GitHub Release.
+GitHub Actions then builds platform binaries and the desktop app (Linux, macOS, Windows) and a Docker image, and creates a GitHub Release.
 
 ## Scripts
 
