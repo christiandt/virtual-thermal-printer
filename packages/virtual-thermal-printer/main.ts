@@ -13,6 +13,7 @@ import { isSea, getAsset } from 'node:sea'
 import { handleConnection, processEscPosStream } from './escpos.js'
 import { ASB_DRAWER_KICK, ASB_PRINT_SUCCESS, eposResponse, parseEposRequest } from './epos.js'
 import { CashDrawer } from './drawer.js'
+import { PrinterCondition } from './printer.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -63,6 +64,15 @@ app.get('/version', (context) => context.text(appVersion))
 
 const drawer = new CashDrawer()
 const handleBlock = drawer.handleBlock.bind(drawer)
+const printer = new PrinterCondition()
+
+function printerStatus(): number {
+	return (
+		(printer.isOnline ? ASB_PRINT_SUCCESS : 0) |
+		(drawer.isOpen ? ASB_DRAWER_KICK : 0) |
+		printer.statusBits
+	)
+}
 
 const eposEndpoint = '/cgi-bin/epos/service.cgi'
 app.use(eposEndpoint, cors())
@@ -75,6 +85,16 @@ app.post(eposEndpoint, async (context) => {
 		console.log(`ePOS elements not supported, skipped: ${[...new Set(job.unsupported)].join(', ')}.`)
 	}
 
+	// An off-line printer prints nothing and fails the job with its error.
+	if (!printer.isOnline) {
+		if (!job.isStatusRequest) {
+			console.log(`ePOS job refused, printer off line (${printer.errorCode}).`)
+		}
+		return context.text(eposResponse(printerStatus(), job.printJobId, printer.errorCode), 200, {
+			'Content-Type': 'text/xml',
+		})
+	}
+
 	if (!job.isStatusRequest) {
 		const stream = new ReadableStream({
 			start(controller) {
@@ -85,8 +105,7 @@ app.post(eposEndpoint, async (context) => {
 		await processEscPosStream(stream, connectedClients, handleBlock)
 	}
 
-	const status = ASB_PRINT_SUCCESS | (drawer.isOpen ? ASB_DRAWER_KICK : 0)
-	return context.text(eposResponse(status, job.printJobId), 200, {
+	return context.text(eposResponse(printerStatus(), job.printJobId), 200, {
 		'Content-Type': 'text/xml',
 	})
 })
@@ -99,6 +118,15 @@ app.post('/drawer/open', (context) => {
 app.post('/drawer/close', (context) => {
 	drawer.set(false)
 	return context.json(drawer.state)
+})
+
+app.get('/printer', (context) => context.json(printer.state))
+app.post('/printer', async (context) => {
+	const change = await context.req.json().catch(() => null)
+	if (!printer.update(change)) {
+		return context.text('Expected a JSON object of coverOpen, paperEnd and paperNearEnd booleans', 400)
+	}
+	return context.json(printer.state)
 })
 
 if (isSea()) {
@@ -161,6 +189,7 @@ wss.on('connection', (ws) => {
 	console.log('WebSocket opened.')
 	connectedClients.add(ws)
 	ws.send(JSON.stringify(drawer.state))
+	ws.send(JSON.stringify(printer.state))
 	ws.on('close', () => {
 		console.log('WebSocket closed.')
 		connectedClients.delete(ws)
@@ -171,15 +200,17 @@ wss.on('connection', (ws) => {
 	})
 })
 
-drawer.onChange((state) => {
+function broadcast(state: object): void {
 	const message = JSON.stringify(state)
 	for (const client of connectedClients) {
 		client.send(message)
 	}
-})
+}
+drawer.onChange(broadcast)
+printer.onChange(broadcast)
 
 const escposServer = createServer((socket) => {
-	handleConnection(socket, connectedClients, handleBlock)
+	handleConnection(socket, connectedClients, handleBlock, () => printer.whenOnline())
 })
 escposServer.listen(socketPort, '0.0.0.0', () => {
 	console.log(`Listening to Socket on port ${socketPort}.`)

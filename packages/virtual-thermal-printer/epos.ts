@@ -282,12 +282,15 @@ function characterSizeAfter(bytes: number[], width: number, height: number): [nu
 const ALIGNMENTS: Record<string, number> = { left: 0, center: 1, right: 2 }
 const FONTS: Record<string, number> = { font_a: 0, font_b: 1, font_c: 2 }
 
-export function eposResponse(status: number, printJobId: string | null): string {
+/** The ePOS response; with an error code (e.g. EPTR_COVER_OPEN) the job
+ *  failed and success is false. */
+export function eposResponse(status: number, printJobId: string | null, errorCode: string | null = null): string {
 	const jobId = printJobId === null ? '' : ` printjobid="${printJobId.replace(/[^\w-]/g, '')}"`
+	const result = errorCode === null ? 'success="true" code=""' : `success="false" code="${errorCode}"`
 	return (
 		'<?xml version="1.0" encoding="utf-8"?>' +
 		'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>' +
-		`<response xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print" success="true" code="" status="${status}" batterystatus="0"${jobId} />` +
+		`<response xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print" ${result} status="${status}" batterystatus="0"${jobId} />` +
 		'</s:Body></s:Envelope>'
 	)
 }

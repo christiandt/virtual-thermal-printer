@@ -22,10 +22,21 @@
 	</head>
 	<body>
 		<span id="version"></span>
-		<aside id="drawer" class="drawer" hidden>
-			<span class="drawer-light" aria-hidden="true"></span>
-			<span class="drawer-label">Cash drawer <strong id="drawer-state" aria-live="polite">closed</strong></span>
-			<button type="button" id="drawer-toggle">Open</button>
+		<aside id="device-panel" class="device-panel" hidden>
+			<div id="printer" class="device-row">
+				<span class="device-light" aria-hidden="true"></span>
+				<span class="device-label">Printer <strong id="printer-state" aria-live="polite">on line</strong></span>
+			</div>
+			<div class="device-toggles" role="group" aria-label="Printer conditions">
+				<button type="button" data-condition="coverOpen" aria-pressed="false">Cover open</button>
+				<button type="button" data-condition="paperNearEnd" aria-pressed="false">Paper low</button>
+				<button type="button" data-condition="paperEnd" aria-pressed="false">Paper out</button>
+			</div>
+			<div id="drawer" class="device-row">
+				<span class="device-light" aria-hidden="true"></span>
+				<span class="device-label">Cash drawer <strong id="drawer-state" aria-live="polite">closed</strong></span>
+				<button type="button" id="drawer-toggle">Open</button>
+			</div>
 		</aside>
 		<div class="content">
 			<div id="printer-output">

@@ -1,49 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { spawn, type ChildProcess } from 'node:child_process'
-import { connect } from 'node:net'
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
 import { WebSocket } from 'ws'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
+import { startServer, waitFor, type TestServer } from './test-server.js'
 
 const ASB_DRAWER_KICK = 0x4
 
-async function waitFor(check: () => Promise<boolean>, retries = 20, delay = 250) {
-	for (let i = 0; i < retries; i++) {
-		try {
-			if (await check()) return
-		} catch {
-			// not ready yet
-		}
-		await new Promise((resolve) => setTimeout(resolve, delay))
-	}
-	throw new Error('Condition not met in time.')
-}
-
-function eposJob(body: string): string {
-	return (
-		'<?xml version="1.0" encoding="utf-8"?>' +
-		'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>' +
-		`<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">${body}</epos-print>` +
-		'</s:Body></s:Envelope>'
-	)
-}
-
 describe('cash drawer', () => {
-	let serverProcess: ChildProcess
+	let server: TestServer
 	let baseUrl: string
-	let socketPort: number
 
 	async function postEpos(body: string): Promise<number> {
-		const response = await fetch(`${baseUrl}/cgi-bin/epos/service.cgi`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'text/xml' },
-			body: eposJob(body),
-		})
-		expect(response.ok).toBe(true)
-		const status = (await response.text()).match(/status="(\d+)"/)?.[1]
-		return Number(status)
+		return (await server.postEpos(body)).status
 	}
 
 	async function drawerOpen(): Promise<boolean> {
@@ -51,21 +17,11 @@ describe('cash drawer', () => {
 	}
 
 	beforeAll(async () => {
-		const httpPort = 7000 + Math.floor(Math.random() * 1000)
-		socketPort = 8100 + Math.floor(Math.random() * 1000)
-		baseUrl = `http://127.0.0.1:${httpPort}`
-		serverProcess = spawn(
-			process.execPath,
-			['--import', 'tsx/esm', '--conditions=source', join(__dirname, 'main.ts'), '--http', `${httpPort}`, '--socket', `${socketPort}`],
-			{ stdio: 'inherit' },
-		)
-		await waitFor(async () => (await fetch(`${baseUrl}/health`)).ok, 40)
+		server = await startServer()
+		baseUrl = server.baseUrl
 	}, 30_000)
 
-	afterAll(async () => {
-		serverProcess.kill()
-		await new Promise((resolve) => serverProcess.on('close', resolve))
-	})
+	afterAll(() => server.stop())
 
 	it('starts closed, and a status request reports it closed', async () => {
 		expect(await drawerOpen()).toBe(false)
@@ -91,13 +47,7 @@ describe('cash drawer', () => {
 	})
 
 	it('opens on ESC p sent raw to the socket', async () => {
-		await new Promise<void>((resolve, reject) => {
-			const socket = connect(socketPort, '127.0.0.1', () => {
-				socket.end(new Uint8Array([0x1b, 0x40, 0x1b, 0x70, 0x00, 0x19, 0xfa]))
-			})
-			socket.on('close', () => resolve())
-			socket.on('error', reject)
-		})
+		await server.sendRaw([0x1b, 0x40, 0x1b, 0x70, 0x00, 0x19, 0xfa])
 		await waitFor(drawerOpen)
 		await fetch(`${baseUrl}/drawer/close`, { method: 'POST' })
 	})
