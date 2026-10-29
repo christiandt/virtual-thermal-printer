@@ -724,6 +724,44 @@ interface DrawerState {
 }
 
 const devicePanel = document.getElementById('device-panel') as HTMLElement
+const devicePanelToggle = document.getElementById('device-panel-toggle') as HTMLButtonElement
+const devicePanelToggleText = document.getElementById('device-panel-toggle-text') as HTMLElement
+const printerMirror = devicePanelToggle.querySelector('[data-mirror="printer"]') as HTMLElement
+const drawerMirror = devicePanelToggle.querySelector('[data-mirror="drawer"]') as HTMLElement
+
+// The panel collapses to a small toggle with the two status lights, out of
+// the way of the paper. The choice is remembered; until one is made, it
+// starts collapsed on narrow screens.
+const PANEL_COLLAPSED_KEY = 'device-panel-collapsed'
+
+function setPanelCollapsed(collapsed: boolean, remember: boolean): void {
+	devicePanel.classList.toggle('is-collapsed', collapsed)
+	devicePanelToggle.setAttribute('aria-expanded', String(!collapsed))
+	devicePanelToggleText.textContent = collapsed ? 'Printer' : 'Hide'
+	devicePanelToggle.title = collapsed ? 'Show the printer and drawer controls' : 'Hide the printer and drawer controls'
+	if (remember) {
+		try {
+			localStorage.setItem(PANEL_COLLAPSED_KEY, String(collapsed))
+		} catch {
+			// Storage unavailable: the choice lasts until the page reloads.
+		}
+	}
+}
+
+function initiallyCollapsed(): boolean {
+	try {
+		const stored = localStorage.getItem(PANEL_COLLAPSED_KEY)
+		if (stored !== null) return stored === 'true'
+	} catch {
+		// Storage unavailable: fall back to the screen width.
+	}
+	return window.matchMedia('(max-width: 700px)').matches
+}
+
+setPanelCollapsed(initiallyCollapsed(), false)
+devicePanelToggle.addEventListener('click', () => {
+	setPanelCollapsed(!devicePanel.classList.contains('is-collapsed'), true)
+})
 const drawerPanel = document.getElementById('drawer') as HTMLElement
 const drawerStateLabel = document.getElementById('drawer-state') as HTMLElement
 const drawerToggle = document.getElementById('drawer-toggle') as HTMLButtonElement
@@ -735,14 +773,17 @@ function showDrawer(state: DrawerState): void {
 	const open = state.open
 	drawerSensor.value = state.sensorHighWhenOpen ? 'open' : 'closed'
 	if (open && isDrawerOpen === false) {
-		// Replay the kick animation for each opening.
-		drawerPanel.classList.remove('is-kicked')
-		void drawerPanel.offsetWidth
-		drawerPanel.classList.add('is-kicked')
+		// Replay the kick animation for each opening, on the collapsed
+		// toggle when that is all there is to see.
+		const target = devicePanel.classList.contains('is-collapsed') ? devicePanel : drawerPanel
+		target.classList.remove('is-kicked')
+		void target.offsetWidth
+		target.classList.add('is-kicked')
 	}
 	isDrawerOpen = open
 	devicePanel.hidden = false
 	drawerPanel.classList.toggle('is-open', open)
+	drawerMirror.classList.toggle('is-open', open)
 	drawerStateLabel.textContent = open ? 'open' : 'closed'
 	drawerToggle.textContent = open ? 'Close' : 'Open'
 }
@@ -781,6 +822,8 @@ function showPrinter(state: PrinterConditionState): void {
 	const offline = state.coverOpen || state.paperEnd
 	printerRow.classList.toggle('is-offline', offline)
 	printerRow.classList.toggle('is-warning', !offline && state.paperNearEnd)
+	printerMirror.classList.toggle('is-offline', offline)
+	printerMirror.classList.toggle('is-warning', !offline && state.paperNearEnd)
 	printerStateLabel.textContent = (state.coverOpen
 		? 'off line: cover open'
 		: state.paperEnd
