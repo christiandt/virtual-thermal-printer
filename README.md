@@ -11,6 +11,8 @@ printer. This tool is designed for developers who need to test point-of-sale
 - **Web-Based Rendering:** Renders the print output in a real-time web interface.
 - **Cash Drawer:** Simulates a drawer on the kick-out connector: pulses open it,
   the printer status reports it, and the web interface closes it.
+- **Printer Conditions:** Cover open, paper out and paper low, set from the web
+  interface and reported the way a TM printer does.
 
 ## Screenshots
 
@@ -91,6 +93,27 @@ curl -X POST http://localhost:8000/drawer/close
 ```
 
 On the shared public server, everyone viewing the page shares the drawer.
+
+### Printer conditions
+
+The web interface can also open the printer cover, run it out of paper or set
+the paper low, to test how a POS handles a printer that cannot print:
+
+| Condition | ePOS response | Raw ESC/POS |
+|---|---|---|
+| Cover open | `success="false" code="EPTR_COVER_OPEN"`, status `ASB_OFF_LINE \| ASB_COVER_OPEN` | held until the cover is closed |
+| Paper out | `success="false" code="EPTR_REC_EMPTY"`, status `ASB_OFF_LINE \| ASB_RECEIPT_END \| ASB_RECEIPT_NEAR_END` | held until paper is back |
+| Paper low | prints; status adds `ASB_RECEIPT_NEAR_END` | prints |
+
+While off line the printer runs nothing from an ePOS job, a drawer pulse
+included. Status requests (empty jobs) fail the same way, with the status
+bits, so a POS can poll it. Over HTTP:
+
+```bash
+curl http://localhost:8000/printer
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"coverOpen": true}' http://localhost:8000/printer
+```
 
 ### ESC/POS (TCP Socket)
 

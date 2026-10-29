@@ -599,9 +599,13 @@ function connectWebSocket(): void {
 	}
 
 	socket.onmessage = (event: MessageEvent) => {
-		const message: ParsedEscPosBlock | DrawerState = JSON.parse(event.data)
+		const message: ParsedEscPosBlock | DrawerState | PrinterConditionState = JSON.parse(event.data)
 		if (message.type === 'drawer') {
 			showDrawer(message.open)
+			return
+		}
+		if (message.type === 'printer') {
+			showPrinter(message)
 			return
 		}
 		const data = message
@@ -718,6 +722,7 @@ interface DrawerState {
 	open: boolean
 }
 
+const devicePanel = document.getElementById('device-panel') as HTMLElement
 const drawerPanel = document.getElementById('drawer') as HTMLElement
 const drawerStateLabel = document.getElementById('drawer-state') as HTMLElement
 const drawerToggle = document.getElementById('drawer-toggle') as HTMLButtonElement
@@ -731,7 +736,7 @@ function showDrawer(open: boolean): void {
 		drawerPanel.classList.add('is-kicked')
 	}
 	isDrawerOpen = open
-	drawerPanel.hidden = false
+	devicePanel.hidden = false
 	drawerPanel.classList.toggle('is-open', open)
 	drawerStateLabel.textContent = open ? 'open' : 'closed'
 	drawerToggle.textContent = open ? 'Close' : 'Open'
@@ -743,6 +748,51 @@ drawerToggle.addEventListener('click', () => {
 		.then((state) => showDrawer(state.open))
 		.catch((error) => console.error('Failed to change the cash drawer:', error))
 })
+
+// Printer conditions: an open cover or an empty roll takes it off line.
+interface PrinterConditionState {
+	type: 'printer'
+	coverOpen: boolean
+	paperEnd: boolean
+	paperNearEnd: boolean
+}
+type PrinterCondition = Exclude<keyof PrinterConditionState, 'type'>
+
+const printerRow = document.getElementById('printer') as HTMLElement
+const printerStateLabel = document.getElementById('printer-state') as HTMLElement
+const conditionButtons = document.querySelectorAll<HTMLButtonElement>('[data-condition]')
+
+function showPrinter(state: PrinterConditionState): void {
+	devicePanel.hidden = false
+	const offline = state.coverOpen || state.paperEnd
+	printerRow.classList.toggle('is-offline', offline)
+	printerRow.classList.toggle('is-warning', !offline && state.paperNearEnd)
+	printerStateLabel.textContent = state.coverOpen
+		? 'off line: cover open'
+		: state.paperEnd
+			? 'off line: paper out'
+			: state.paperNearEnd
+				? 'on line: paper low'
+				: 'on line'
+	for (const button of conditionButtons) {
+		const condition = button.dataset.condition as PrinterCondition
+		button.setAttribute('aria-pressed', String(state[condition]))
+	}
+}
+
+for (const button of conditionButtons) {
+	button.addEventListener('click', () => {
+		const condition = button.dataset.condition as PrinterCondition
+		fetch('/printer', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ [condition]: button.getAttribute('aria-pressed') !== 'true' }),
+		})
+			.then((r) => r.json() as Promise<PrinterConditionState>)
+			.then(showPrinter)
+			.catch((error) => console.error('Failed to change the printer condition:', error))
+	})
+}
 
 // Initial connection
 connectWebSocket()

@@ -134,6 +134,8 @@ export async function handleConnection(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	connectedClients: Set<any>,
 	onBlock?: BlockHandler,
+	/** Resolves when the printer may print; raw data waits for it. */
+	whenOnline?: () => Promise<void>,
 ) {
 	const remoteAddressString = socket.remoteAddress && socket.remotePort
 		? `${socket.remoteAddress}:${socket.remotePort}`
@@ -143,9 +145,15 @@ export async function handleConnection(
 	try {
 		const readable = Readable.toWeb(socket) as ReadableStream<Uint8Array>
 		await processEscPosStream(
-			readable.pipeThrough(
-				new TransformStream(new ProbeFilterTransformer()),
-			),
+			readable
+				.pipeThrough(new TransformStream(new ProbeFilterTransformer()))
+				.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+					// Data stays in the receive buffer while the printer is off line.
+					async transform(chunk, controller) {
+						await whenOnline?.()
+						controller.enqueue(chunk)
+					},
+				})),
 			connectedClients,
 			onBlock,
 		)

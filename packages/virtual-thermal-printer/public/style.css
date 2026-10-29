@@ -107,15 +107,14 @@ h1 {
 	pointer-events: none;
 }
 
-.drawer {
+.device-panel {
 	position: fixed;
 	right: 12px;
 	bottom: 12px;
 	z-index: 1;
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	padding: 8px 8px 8px 12px;
+	display: grid;
+	gap: 8px;
+	padding: 10px 10px 10px 12px;
 	border-radius: 8px;
 	font-size: 0.9rem;
 	color: light-dark(#222, #eee);
@@ -123,22 +122,39 @@ h1 {
 	box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
 }
 
-.drawer[hidden] {
+.device-panel[hidden] {
 	display: none;
 }
 
-.drawer-light {
+.device-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 30px;
+}
+
+.device-label {
+	flex-grow: 1;
+}
+
+.device-light {
+	flex-shrink: 0;
 	width: 10px;
 	height: 10px;
 	border-radius: 50%;
 	background-color: light-dark(#2e7d32, #66bb6a);
 }
 
-.drawer.is-open .drawer-light {
+#drawer.is-open .device-light,
+#printer.is-warning .device-light {
 	background-color: light-dark(#e65100, #ffa726);
 }
 
-.drawer.is-kicked {
+#printer.is-offline .device-light {
+	background-color: light-dark(#c62828, #ef5350);
+}
+
+#drawer.is-kicked {
 	animation: drawer-kick 0.4s ease-out;
 }
 
@@ -148,7 +164,15 @@ h1 {
 	}
 }
 
-.drawer button {
+.device-toggles {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid light-dark(#ddd, #444);
+}
+
+.device-panel button {
 	font: inherit;
 	padding: 4px 12px;
 	border-radius: 6px;
@@ -158,8 +182,19 @@ h1 {
 	cursor: pointer;
 }
 
+.device-toggles button {
+	font-size: 0.8rem;
+	padding: 3px 10px;
+}
+
+.device-toggles button[aria-pressed='true'] {
+	color: light-dark(#fff, #121212);
+	border-color: transparent;
+	background-color: light-dark(#c62828, #ef5350);
+}
+
 @media (prefers-reduced-motion: reduce) {
-	.drawer.is-kicked {
+	#drawer.is-kicked {
 		animation: none;
 	}
 }
