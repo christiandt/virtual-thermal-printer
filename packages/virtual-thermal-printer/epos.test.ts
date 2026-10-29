@@ -86,6 +86,18 @@ describe('parseEposRequest', () => {
 		expect(text).toBe('Dvo?ák')
 	})
 
+	it('selects the code table again after a raw command', async () => {
+		const job = parseEposRequest(envelope('<text>A</text><command>1b40</command><text>ø</text>'))
+		const blocks = await decode(job!.bytes)
+		const text = blocks.flatMap((b) => (b.type === 'text' ? [b.content] : [])).join('')
+		expect(text).toBe('Aø')
+	})
+
+	it('translates a very long text element', () => {
+		const job = parseEposRequest(envelope(`<text>${'x'.repeat(200_000)}</text>`))
+		expect(job?.bytes.length).toBe(3 + 200_000)
+	})
+
 	it('keeps the character size across elements', () => {
 		const job = parseEposRequest(envelope('<text width="3"/><text dh="true"/>'))
 		expect([...job!.bytes]).toEqual([0x1d, 0x21, 0x20, 0x1d, 0x21, 0x21])

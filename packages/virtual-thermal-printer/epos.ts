@@ -109,7 +109,9 @@ export function parseEposRequest(body: string): EposJob | null {
 						out.push(ESC, 0x74, CODE_TABLE_WPC1252)
 						selectedCodeTable = true
 					}
-					out.push(...iconv.encode(text, TEXT_ENCODING))
+					// Byte by byte: spreading a long text into push() would exceed
+					// the engine's argument limit.
+					for (const b of iconv.encode(text, TEXT_ENCODING)) out.push(b)
 				}
 				break
 			}
@@ -134,6 +136,9 @@ export function parseEposRequest(body: string): EposJob | null {
 				for (let i = 0; i + 1 < hex.length; i += 2) {
 					out.push(parseInt(hex.slice(i, i + 2), 16))
 				}
+				// Raw bytes may reset the printer (ESC @) or select another code
+				// table, so the next text selects WPC1252 again.
+				selectedCodeTable = false
 				break
 			}
 			default:
