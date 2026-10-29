@@ -8,7 +8,7 @@
 // acceptance survives restarts. It names localhost and this machine's host
 // name and network addresses, so the POS can reach it by IP like a printer on
 // the shop network.
-import { X509Certificate } from 'node:crypto'
+import { X509Certificate, generateKeyPairSync } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { hostname, homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -16,6 +16,11 @@ import selfsigned from 'selfsigned'
 
 export const DEFAULT_CERT_PATH = join(homedir(), '.virtual-thermal-printer', 'https-cert.pem')
 export const DEFAULT_KEY_PATH = join(homedir(), '.virtual-thermal-printer', 'https-key.pem')
+
+// selfsigned's typings predate its keyPair option.
+type GenerateOptions = NonNullable<Parameters<typeof selfsigned.generate>[1]> & {
+	keyPair: { privateKey: string; publicKey: string }
+}
 
 /** Generated certificates are valid this long. */
 const CERTIFICATE_DAYS = 825
@@ -48,9 +53,16 @@ export function certificateNames(): { dns: string[]; ips: string[] } {
 
 export function generateCertificate(): { cert: string; key: string } {
 	const { dns, ips } = certificateNames()
-	const pems = selfsigned.generate([{ name: 'commonName', value: 'Virtual Thermal Printer' }], {
+	// The key comes from Node's native crypto: node-forge's pure-JavaScript
+	// RSA generation takes seconds and blocks the event loop meanwhile.
+	const keyPair = generateKeyPairSync('rsa', {
+		modulusLength: 2048,
+		publicKeyEncoding: { type: 'spki', format: 'pem' },
+		privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+	})
+	const options: GenerateOptions = {
 		days: CERTIFICATE_DAYS,
-		keySize: 2048,
+		keyPair: { privateKey: keyPair.privateKey, publicKey: keyPair.publicKey },
 		algorithm: 'sha256',
 		extensions: [
 			{ name: 'basicConstraints', cA: false },
@@ -64,7 +76,8 @@ export function generateCertificate(): { cert: string; key: string } {
 				],
 			},
 		],
-	})
+	}
+	const pems = selfsigned.generate([{ name: 'commonName', value: 'Virtual Thermal Printer' }], options)
 	return { cert: pems.cert, key: pems.private }
 }
 
