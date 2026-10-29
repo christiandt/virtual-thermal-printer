@@ -98,6 +98,26 @@ describe('parseEposRequest', () => {
 		expect(job?.bytes.length).toBe(3 + 200_000)
 	})
 
+	it('ignores commented-out elements', () => {
+		const job = parseEposRequest(envelope('<!-- <pulse/> --><text>Hi</text><!--<cut/>-->'))
+		expect(job?.bytes.includes(0x70)).toBe(false)
+		expect([...job!.bytes].slice(-2)).toEqual([0x48, 0x69])
+	})
+
+	it('builds dw/dh on the size a raw command left', () => {
+		const job = parseEposRequest(envelope(
+			'<text width="3"/><command>1b40</command><text dh="true"/>' +
+			'<command>1d2110</command><text dh="true"/>',
+		))
+		expect([...job!.bytes]).toEqual([
+			0x1d, 0x21, 0x20,
+			0x1b, 0x40,
+			0x1d, 0x21, 0x01, // reset to 1×1, then double height
+			0x1d, 0x21, 0x10,
+			0x1d, 0x21, 0x11, // double width kept, double height added
+		])
+	})
+
 	it('keeps the character size across elements', () => {
 		const job = parseEposRequest(envelope('<text width="3"/><text dh="true"/>'))
 		expect([...job!.bytes]).toEqual([0x1d, 0x21, 0x20, 0x1d, 0x21, 0x21])

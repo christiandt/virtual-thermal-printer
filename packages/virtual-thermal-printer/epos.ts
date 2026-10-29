@@ -66,6 +66,8 @@ function byte(value: number): number {
 
 /** Parse an ePOS-Print request; null when it holds no <epos-print> element. */
 export function parseEposRequest(body: string): EposJob | null {
+	// Commented-out elements are not part of the job.
+	body = body.replace(/<!--[\s\S]*?-->/g, '')
 	const eposPrint = body.match(/<epos-print\b[^>]*?(?:\/>|>([\s\S]*?)<\/epos-print\s*>)/)
 	if (!eposPrint) {
 		return null
@@ -133,12 +135,16 @@ export function parseEposRequest(body: string): EposJob | null {
 			}
 			case 'command': {
 				const hex = (content ?? '').replace(/\s+/g, '')
+				const raw: number[] = []
 				for (let i = 0; i + 1 < hex.length; i += 2) {
-					out.push(parseInt(hex.slice(i, i + 2), 16))
+					raw.push(parseInt(hex.slice(i, i + 2), 16))
 				}
+				for (const b of raw) out.push(b)
 				// Raw bytes may reset the printer (ESC @) or select another code
-				// table, so the next text selects WPC1252 again.
+				// table, so the next text selects WPC1252 again; and they may
+				// change the character size the next dw/dh builds on.
 				selectedCodeTable = false
+				;[width, height] = characterSizeAfter(raw, width, height)
 				break
 			}
 			default:
@@ -152,6 +158,25 @@ export function parseEposRequest(body: string): EposJob | null {
 		printJobId,
 		unsupported,
 	}
+}
+
+/** The character size after raw ESC/POS bytes: ESC @ resets it, GS ! and
+ *  ESC ! set it. A byte scan, so image or barcode data that happens to hold
+ *  these sequences can mislead it. */
+function characterSizeAfter(bytes: number[], width: number, height: number): [number, number] {
+	for (let i = 0; i + 1 < bytes.length; i++) {
+		if (bytes[i] === ESC && bytes[i + 1] === 0x40) {
+			width = 1
+			height = 1
+		} else if (bytes[i] === GS && bytes[i + 1] === 0x21 && i + 2 < bytes.length) {
+			width = (bytes[i + 2] >> 4) + 1
+			height = (bytes[i + 2] & 0x0f) + 1
+		} else if (bytes[i] === ESC && bytes[i + 1] === 0x21 && i + 2 < bytes.length) {
+			width = bytes[i + 2] & 0x20 ? 2 : 1
+			height = bytes[i + 2] & 0x10 ? 2 : 1
+		}
+	}
+	return [width, height]
 }
 
 const ALIGNMENTS: Record<string, number> = { left: 0, center: 1, right: 2 }
