@@ -131,6 +131,46 @@ h1 {
 	gap: 8px;
 }
 
+.connect {
+	padding-top: 8px;
+	border-top: 1px solid light-dark(#ddd, #444);
+	font-size: 0.8rem;
+}
+
+.connect summary {
+	cursor: pointer;
+}
+
+.connect code {
+	font-size: 0.8rem;
+}
+
+.connect-list code {
+	user-select: all;
+}
+
+.connect-list {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	align-items: center;
+	gap: 4px 8px;
+	margin: 8px 0 0;
+}
+
+.connect-list dt {
+	opacity: 0.7;
+}
+
+.connect-list dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.connect-list button {
+	font-size: 0.75rem;
+	padding: 2px 8px;
+}
+
 /* Collapsed: only the toggle, with the printer and drawer lights. */
 .device-panel.is-collapsed {
 	padding: 6px;

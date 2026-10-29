@@ -885,6 +885,62 @@ drawerSensor.addEventListener('change', () => {
 		.catch((error) => console.error('Failed to change the drawer sensor:', error))
 })
 
+// Where a POS reaches this printer, from GET /info.
+interface PrinterInfo {
+	httpPort: number
+	httpsPort: number | null
+	socketPort: number
+	eposPath: string
+	hosts: string[]
+}
+
+const connect = document.getElementById('connect') as HTMLDetailsElement
+const connectPrimary = document.getElementById('connect-primary') as HTMLElement
+const connectList = document.getElementById('connect-list') as HTMLElement
+
+function copyText(text: string, button: HTMLButtonElement): void {
+	const done = () => {
+		button.textContent = 'Copied'
+		setTimeout(() => (button.textContent = 'Copy'), 1500)
+	}
+	// The clipboard API needs a secure context (localhost or HTTPS); without
+	// it the address can still be selected with one click (user-select: all).
+	if (!navigator.clipboard) {
+		button.textContent = 'Select it'
+		return
+	}
+	navigator.clipboard.writeText(text).then(done, () => (button.textContent = 'Select it'))
+}
+
+function showConnection(info: PrinterInfo): void {
+	const primary = `http://localhost:${info.httpPort}`
+	connectPrimary.textContent = primary
+	const rows: [string, string][] = [['ePOS (HTTP)', primary]]
+	if (info.httpsPort !== null) rows.push(['ePOS (HTTPS)', `https://localhost:${info.httpsPort}`])
+	for (const host of info.hosts.slice(1)) rows.push(['On the network', `http://${host}:${info.httpPort}`])
+	rows.push(['ePOS path', info.eposPath], ['Raw ESC/POS', `localhost:${info.socketPort}`])
+	connectList.replaceChildren()
+	for (const [label, value] of rows) {
+		const term = document.createElement('dt')
+		term.textContent = label
+		const detail = document.createElement('dd')
+		const code = document.createElement('code')
+		code.textContent = value
+		detail.append(code)
+		const button = document.createElement('button')
+		button.type = 'button'
+		button.textContent = 'Copy'
+		button.addEventListener('click', () => copyText(value, button))
+		connectList.append(term, detail, button)
+	}
+	connect.hidden = false
+}
+
+fetch('/info')
+	.then((r) => (r.ok ? (r.json() as Promise<PrinterInfo>) : Promise.reject(new Error(`HTTP ${r.status}`))))
+	.then(showConnection)
+	.catch((error) => console.error('Failed to read the printer info:', error))
+
 // Initial connection
 connectWebSocket()
 
