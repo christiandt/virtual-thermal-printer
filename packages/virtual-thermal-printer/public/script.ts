@@ -912,13 +912,37 @@ function copyText(text: string, button: HTMLButtonElement): void {
 	navigator.clipboard.writeText(text).then(done, () => (button.textContent = 'Select it'))
 }
 
+const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]']
+
+/** The addresses to show: the one this page was opened at first, which is
+ *  reachable by definition. The server's own ports only add more when the
+ *  page reached it on one of them; behind a port mapping (Docker) they are
+ *  the ports inside it, which a POS may not reach. */
+function connectionRows(info: PrinterInfo): [string, string][] {
+	const https = location.protocol === 'https:'
+	const pagePort = Number(location.port || (https ? 443 : 80))
+	const rows: [string, string][] = [[`ePOS (${https ? 'HTTPS' : 'HTTP'})`, location.origin]]
+	const mapped = pagePort !== (https ? info.httpsPort : info.httpPort)
+	if (mapped) {
+		const inside = [`HTTP ${info.httpPort}`, info.httpsPort !== null ? `HTTPS ${info.httpsPort}` : null, `raw ESC/POS ${info.socketPort}`]
+		rows.push(['Ports inside', `${inside.filter(Boolean).join(', ')} (mapped, e.g. by Docker)`])
+		rows.push(['ePOS path', info.eposPath])
+		return rows
+	}
+	const host = location.hostname
+	if (https) rows.push(['ePOS (HTTP)', `http://${host}:${info.httpPort}`])
+	else if (info.httpsPort !== null) rows.push(['ePOS (HTTPS)', `https://${host}:${info.httpsPort}`])
+	if (LOCAL_HOSTNAMES.includes(host)) {
+		// Opened on this machine: a POS elsewhere uses its network address.
+		for (const address of info.hosts.slice(1)) rows.push(['On the network', `http://${address}:${info.httpPort}`])
+	}
+	rows.push(['ePOS path', info.eposPath], ['Raw ESC/POS', `${host}:${info.socketPort}`])
+	return rows
+}
+
 function showConnection(info: PrinterInfo): void {
-	const primary = `http://localhost:${info.httpPort}`
-	connectPrimary.textContent = primary
-	const rows: [string, string][] = [['ePOS (HTTP)', primary]]
-	if (info.httpsPort !== null) rows.push(['ePOS (HTTPS)', `https://localhost:${info.httpsPort}`])
-	for (const host of info.hosts.slice(1)) rows.push(['On the network', `http://${host}:${info.httpPort}`])
-	rows.push(['ePOS path', info.eposPath], ['Raw ESC/POS', `localhost:${info.socketPort}`])
+	const rows = connectionRows(info)
+	connectPrimary.textContent = rows[0][1]
 	connectList.replaceChildren()
 	for (const [label, value] of rows) {
 		const term = document.createElement('dt')
