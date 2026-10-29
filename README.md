@@ -144,9 +144,11 @@ curl -X POST \
 
 Besides raw ESC/POS in `<command>`, the endpoint takes the print elements the
 Epson ePOS SDKs send: `<text>` (with `align`, `em`, `ul`, `reverse`, `font`,
-`width`, `height`, `dw`, `dh`, `linespc`), `<feed>`, `<cut>` and `<pulse>`.
-Text is printed in code page WPC1252. Other elements (`<image>`, `<barcode>`,
-…) are skipped and logged. A job without elements prints nothing and returns
+`width`, `height`, `dw`, `dh`, `linespc`), `<feed>`, `<cut>`, `<pulse>` and
+QR codes as `<symbol type="qrcode_model_1|qrcode_model_2">` (with `level` and
+`width`, the module size). Text is printed in code page WPC1252. Other
+elements (`<image>`, `<barcode>`, other symbol types, …) are skipped and
+logged. In the job log a QR code reads `[QR <its data>]`. A job without elements prints nothing and returns
 the printer status, which is how clients poll it.
 
 ### Cash drawer

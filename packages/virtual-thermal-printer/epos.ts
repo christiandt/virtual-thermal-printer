@@ -227,6 +227,16 @@ export function parseEposRequest(body: string): EposJob | null {
 				if (a.type === 'no_feed') out.push(GS, 0x56, 0x01)
 				else out.push(GS, 0x56, 0x42, 0x00)
 				break
+			case 'symbol': {
+				const model = QR_MODELS[a.type ?? '']
+				if (model === undefined) {
+					// PDF417, MaxiCode, DataMatrix, … are not drawn.
+					unsupported.push(`symbol (${a.type ?? 'no type'})`)
+					break
+				}
+				out.push(...qrCode(content, model, a.level, a.width))
+				break
+			}
 			case 'pulse': {
 				// ESC p m t1 t2: on for t1 × 2 ms, off for t2 × 2 ms.
 				const ms = Number(a.time?.match(/^pulse_(\d+)$/)?.[1] ?? 100)
@@ -277,6 +287,38 @@ function characterSizeAfter(bytes: number[], width: number, height: number): [nu
 		}
 	}
 	return [width, height]
+}
+
+/** GS ( k function 165 model values for the QR symbol types. */
+const QR_MODELS: Record<string, number> = { qrcode_model_1: 49, qrcode_model_2: 50 }
+/** GS ( k function 169 error correction values; ePOS "default" is M. */
+const QR_LEVELS: Record<string, number> = { level_l: 48, level_m: 49, level_q: 50, level_h: 51, default: 49 }
+/** ePOS draws a QR code with 3-dot modules unless told otherwise. */
+const QR_DEFAULT_MODULE = 3
+
+/** GS ( k cn=49 fn … with the length prefix. */
+function qrFunction(fn: number, params: number[]): number[] {
+	const length = params.length + 2
+	return [GS, 0x28, 0x6b, length & 0xff, (length >> 8) & 0xff, 49, fn, ...params]
+}
+
+/** An ePOS <symbol> QR code as the ESC/POS a TM printer runs for it: model,
+ *  module size, error correction, store the data, print it. */
+function qrCode(data: string, model: number, level: string | undefined, width: string | undefined): number[] {
+	const module = Math.max(1, Math.min(16, Number(width) || QR_DEFAULT_MODULE))
+	const bytes = new TextEncoder().encode(data)
+	const out = [
+		...qrFunction(65, [model, 0]),
+		...qrFunction(67, [module]),
+		...qrFunction(69, [QR_LEVELS[level ?? 'default'] ?? QR_LEVELS.default]),
+	]
+	// Store the data (fn 80, m = 48); appended byte by byte, as a long payload
+	// would overflow push(...).
+	const length = bytes.length + 3
+	out.push(GS, 0x28, 0x6b, length & 0xff, (length >> 8) & 0xff, 49, 80, 48)
+	for (const b of bytes) out.push(b)
+	out.push(...qrFunction(81, [48]))
+	return out
 }
 
 const ALIGNMENTS: Record<string, number> = { left: 0, center: 1, right: 2 }

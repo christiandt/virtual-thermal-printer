@@ -146,6 +146,15 @@ describe('JobLog', () => {
 		expect(log.list()[0]).toMatchObject({ text: 'page\npage\n more\n', cuts: 1 })
 	})
 
+	it('records a QR code as its data', () => {
+		const log = new JobLog()
+		const recorder = log.start('epos')
+		recorder.add(text('Join the club'))
+		recorder.add({ type: 'image', width: 150, height: 150, base64: '', alignment: Alignment.Center, symbolData: 'https://shop.example/club/join' })
+		recorder.finish()
+		expect(log.list()[0].text).toBe('Join the club\n[QR https://shop.example/club/join]\n')
+	})
+
 	it('does not record a socket connection that decoded nothing, but does an ePOS request', () => {
 		const log = new JobLog()
 		log.start('socket').finish()
@@ -269,6 +278,18 @@ describe('print jobs over HTTP', () => {
 		await server.sendRaw([0x1b, 0x40, ...Buffer.from('Raw job\n'), 0x1d, 0x56, 0x00])
 		await waitFor(async () => (await listJobs()).length === 1)
 		expect((await listJobs())[0]).toMatchObject({ source: 'socket', text: 'Raw job\n', cuts: 1 })
+	})
+
+	it('records a QR code the way a POS sends it', async () => {
+		const link = 'https://shop.example/club/join?src=receipt'
+		await server.postEpos(
+			'<text align="center"/><text>Bli medlem i kundeklubben&#10;</text>' +
+			`<text align="center"/><symbol type="qrcode_model_2" level="level_m" width="6" height="0" size="0">${link}</symbol><feed line="1"/><cut/>`,
+		)
+		const [job] = await listJobs()
+		expect(job.text).toBe(`Bli medlem i kundeklubben\n[QR ${link}]\n\n`)
+		const full: Job = await (await fetch(`${server.baseUrl}/jobs/${job.id}`)).json()
+		expect(full.blocks).toContainEqual(expect.objectContaining({ type: 'image', symbolData: link }))
 	})
 
 	it('lists only jobs after ?since=', async () => {

@@ -48,4 +48,6 @@ export interface EscPosImage {
 	base64: string
 	/** Alignment (ESC a) when the image was printed. */
 	alignment: Alignment
+	/** The data a printed QR code encodes; absent for other images. */
+	symbolData?: string
 }

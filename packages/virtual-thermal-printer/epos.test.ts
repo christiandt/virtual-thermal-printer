@@ -173,6 +173,41 @@ describe('parseEposRequest', () => {
 		expect(blocks).toContainEqual(expect.objectContaining({ type: 'command', name: 'Generate Pulse' }))
 	})
 
+	it('translates a QR <symbol> into the GS ( k sequence', () => {
+		const job = parseEposRequest(envelope('<symbol type="qrcode_model_2" level="level_q" width="6">AB</symbol>'))
+		expect([...job!.bytes]).toEqual([
+			0x1d, 0x28, 0x6b, 4, 0, 49, 65, 50, 0, // model 2
+			0x1d, 0x28, 0x6b, 3, 0, 49, 67, 6, // 6-dot modules
+			0x1d, 0x28, 0x6b, 3, 0, 49, 69, 50, // level Q
+			0x1d, 0x28, 0x6b, 5, 0, 49, 80, 48, 0x41, 0x42, // store "AB"
+			0x1d, 0x28, 0x6b, 3, 0, 49, 81, 48, // print
+		])
+		expect(job?.unsupported).toEqual([])
+	})
+
+	it('uses 3-dot modules and level M by default, and decodes entities in the data', () => {
+		const job = parseEposRequest(envelope('<symbol type="qrcode_model_1">a?b=1&amp;c=2</symbol>'))
+		const bytes = [...job!.bytes]
+		expect(bytes.slice(0, 9)).toEqual([0x1d, 0x28, 0x6b, 4, 0, 49, 65, 49, 0])
+		expect(bytes.slice(9, 17)).toEqual([0x1d, 0x28, 0x6b, 3, 0, 49, 67, 3])
+		expect(bytes.slice(17, 25)).toEqual([0x1d, 0x28, 0x6b, 3, 0, 49, 69, 49])
+		expect(Buffer.from(bytes.slice(33, -8)).toString()).toBe('a?b=1&c=2')
+	})
+
+	it('decodes a QR <symbol> into a QR image that carries its data', async () => {
+		const link = 'https://shop.example/club/join?src=receipt'
+		const job = parseEposRequest(envelope(`<text align="center"/><symbol type="qrcode_model_2" level="level_m" width="6" height="0" size="0">${link}</symbol>`))
+		const blocks = await decode(job!.bytes)
+		const image = blocks.find((block) => block.type === 'image')
+		expect(image).toMatchObject({ type: 'image', symbolData: link, alignment: 1 })
+	})
+
+	it('reports symbol types it does not draw', () => {
+		const job = parseEposRequest(envelope('<symbol type="pdf417_standard">x</symbol><text>y</text>'))
+		expect(job?.unsupported).toEqual(['symbol (pdf417_standard)'])
+		expect(job?.bytes.at(-1)).toBe(0x79)
+	})
+
 	it('reports unsupported elements and still prints the rest', () => {
 		const job = parseEposRequest(envelope('<barcode type="ean13">4901234567894</barcode><text>x</text>'))
 		expect(job?.unsupported).toEqual(['barcode'])
