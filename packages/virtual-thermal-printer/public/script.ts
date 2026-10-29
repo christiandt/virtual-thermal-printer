@@ -601,7 +601,7 @@ function connectWebSocket(): void {
 	socket.onmessage = (event: MessageEvent) => {
 		const message: ParsedEscPosBlock | DrawerState | PrinterConditionState = JSON.parse(event.data)
 		if (message.type === 'drawer') {
-			showDrawer(message.open)
+			showDrawer(message)
 			return
 		}
 		if (message.type === 'printer') {
@@ -720,6 +720,7 @@ function connectWebSocket(): void {
 interface DrawerState {
 	type: 'drawer'
 	open: boolean
+	sensorHighWhenOpen: boolean
 }
 
 const devicePanel = document.getElementById('device-panel') as HTMLElement
@@ -728,7 +729,11 @@ const drawerStateLabel = document.getElementById('drawer-state') as HTMLElement
 const drawerToggle = document.getElementById('drawer-toggle') as HTMLButtonElement
 let isDrawerOpen: boolean | null = null
 
-function showDrawer(open: boolean): void {
+const drawerSensor = document.getElementById('drawer-sensor') as HTMLSelectElement
+
+function showDrawer(state: DrawerState): void {
+	const open = state.open
+	drawerSensor.value = state.sensorHighWhenOpen ? 'open' : 'closed'
 	if (open && isDrawerOpen === false) {
 		// Replay the kick animation for each opening.
 		drawerPanel.classList.remove('is-kicked')
@@ -745,7 +750,7 @@ function showDrawer(open: boolean): void {
 drawerToggle.addEventListener('click', () => {
 	fetch(`/drawer/${isDrawerOpen ? 'close' : 'open'}`, { method: 'POST' })
 		.then((r) => r.json() as Promise<DrawerState>)
-		.then((state) => showDrawer(state.open))
+		.then(showDrawer)
 		.catch((error) => console.error('Failed to change the cash drawer:', error))
 })
 
@@ -824,6 +829,17 @@ responseSelect.addEventListener('change', () => {
 		.then((r) => r.json() as Promise<PrinterConditionState>)
 		.then(showPrinter)
 		.catch((error) => console.error('Failed to change the printer response:', error))
+})
+
+drawerSensor.addEventListener('change', () => {
+	fetch('/drawer', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ sensorHighWhenOpen: drawerSensor.value === 'open' }),
+	})
+		.then((r) => r.json() as Promise<DrawerState>)
+		.then(showDrawer)
+		.catch((error) => console.error('Failed to change the drawer sensor:', error))
 })
 
 // Initial connection

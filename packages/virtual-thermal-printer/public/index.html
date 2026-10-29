@@ -48,6 +48,13 @@
 				<span class="device-label">Cash drawer <strong id="drawer-state" aria-live="polite">closed</strong></span>
 				<button type="button" id="drawer-toggle">Open</button>
 			</div>
+			<label class="device-response">
+				Sensor reads HIGH when
+				<select id="drawer-sensor">
+					<option value="open">open (most drawers)</option>
+					<option value="closed">closed</option>
+				</select>
+			</label>
 		</aside>
 		<div class="content">
 			<div id="printer-output">
