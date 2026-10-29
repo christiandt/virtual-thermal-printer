@@ -121,10 +121,16 @@ closed with the button in the bottom corner of the web interface, which can
 also open it by hand. While it is open, ePOS responses set the
 `ASB_DRAWER_KICK` bit (`0x4`) of `status`, the drawer sensor reading HIGH.
 
+Most drawers' sensor reads HIGH while open; some read HIGH while closed, and
+a POS must be set up for that. Choose "Sensor reads HIGH when … closed" in the
+web interface (or `POST /drawer` with `{"sensorHighWhenOpen": false}`) to
+simulate such a drawer: the `ASB_DRAWER_KICK` bit is then set while the drawer
+is closed.
+
 The drawer can also be read and set over HTTP, e.g. from tests:
 
 ```bash
-curl http://localhost:8000/drawer              # {"type":"drawer","open":false}
+curl http://localhost:8000/drawer              # {"type":"drawer","open":false,"sensorHighWhenOpen":true}
 curl -X POST http://localhost:8000/drawer/open
 curl -X POST http://localhost:8000/drawer/close
 ```

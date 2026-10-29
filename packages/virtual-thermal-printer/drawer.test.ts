@@ -1,8 +1,32 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { WebSocket } from 'ws'
+import { CashDrawer } from './drawer.js'
 import { startServer, waitFor, type TestServer } from './test-server.js'
 
 const ASB_DRAWER_KICK = 0x4
+
+describe('CashDrawer sensor', () => {
+	it('reads HIGH while open by default, and while closed when reversed', () => {
+		const drawer = new CashDrawer()
+		expect(drawer.sensorHigh).toBe(false)
+		drawer.set(true)
+		expect(drawer.sensorHigh).toBe(true)
+		drawer.setSensor(false)
+		expect(drawer.sensorHigh).toBe(false)
+		drawer.set(false)
+		expect(drawer.sensorHigh).toBe(true)
+	})
+
+	it('tells listeners when the sensor polarity changes', () => {
+		const drawer = new CashDrawer()
+		const states: boolean[] = []
+		drawer.onChange((state) => states.push(state.sensorHighWhenOpen))
+		drawer.setSensor(false)
+		drawer.setSensor(false)
+		drawer.setSensor(true)
+		expect(states).toEqual([false, true])
+	})
+})
 
 describe('cash drawer', () => {
 	let server: TestServer
@@ -36,7 +60,7 @@ describe('cash drawer', () => {
 
 	it('closes from the web interface', async () => {
 		const response = await fetch(`${baseUrl}/drawer/close`, { method: 'POST' })
-		expect(await response.json()).toEqual({ type: 'drawer', open: false })
+		expect(await response.json()).toEqual({ type: 'drawer', open: false, sensorHighWhenOpen: true })
 		expect((await postEpos('')) & ASB_DRAWER_KICK).toBe(0)
 	})
 
@@ -52,6 +76,22 @@ describe('cash drawer', () => {
 		await fetch(`${baseUrl}/drawer/close`, { method: 'POST' })
 	})
 
+	it('reports a reversed sensor: HIGH while closed', async () => {
+		const setSensor = (sensorHighWhenOpen: unknown) => fetch(`${baseUrl}/drawer`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ sensorHighWhenOpen }),
+		})
+		expect(await (await setSensor(false)).json()).toEqual({ type: 'drawer', open: false, sensorHighWhenOpen: false })
+		expect((await postEpos('')) & ASB_DRAWER_KICK).toBe(ASB_DRAWER_KICK)
+		await fetch(`${baseUrl}/drawer/open`, { method: 'POST' })
+		expect((await postEpos('')) & ASB_DRAWER_KICK).toBe(0)
+		await fetch(`${baseUrl}/drawer/close`, { method: 'POST' })
+		expect((await setSensor('no')).status).toBe(400)
+		await setSensor(true)
+		expect((await postEpos('')) & ASB_DRAWER_KICK).toBe(0)
+	})
+
 	it('tells web clients the drawer state on connect and on every change', async () => {
 		const ws = new WebSocket(`${baseUrl.replace('http', 'ws')}/stream`)
 		const messages: unknown[] = []
@@ -63,9 +103,9 @@ describe('cash drawer', () => {
 		await waitFor(async () => messages.filter((m) => (m as { type: string }).type === 'drawer').length >= 3)
 		ws.close()
 		expect(messages.filter((m) => (m as { type: string }).type === 'drawer')).toEqual([
-			{ type: 'drawer', open: false },
-			{ type: 'drawer', open: true },
-			{ type: 'drawer', open: false },
+			{ type: 'drawer', open: false, sensorHighWhenOpen: true },
+			{ type: 'drawer', open: true, sensorHighWhenOpen: true },
+			{ type: 'drawer', open: false, sensorHighWhenOpen: true },
 		])
 	})
 })

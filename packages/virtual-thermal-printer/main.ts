@@ -78,7 +78,7 @@ const jobs = new JobLog()
 function printerStatus(): number {
 	return (
 		(printer.isOnline ? ASB_PRINT_SUCCESS : 0) |
-		(drawer.isOpen ? ASB_DRAWER_KICK : 0) |
+		(drawer.sensorHigh ? ASB_DRAWER_KICK : 0) |
 		printer.statusBits
 	)
 }
@@ -147,6 +147,15 @@ function waitUntilAborted(signal: AbortSignal, ms: number): Promise<void> {
 }
 
 app.get('/drawer', (context) => context.json(drawer.state))
+app.post('/drawer', async (context) => {
+	const change = await context.req.json().catch(() => null)
+	if (typeof change !== 'object' || change === null || Object.keys(change).some((key) => key !== 'sensorHighWhenOpen') ||
+		typeof change.sensorHighWhenOpen !== 'boolean') {
+		return context.text('Expected {"sensorHighWhenOpen": true | false}', 400)
+	}
+	drawer.setSensor(change.sensorHighWhenOpen)
+	return context.json(drawer.state)
+})
 app.post('/drawer/open', (context) => {
 	drawer.set(true)
 	return context.json(drawer.state)
