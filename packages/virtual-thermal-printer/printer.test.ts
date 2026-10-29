@@ -7,7 +7,7 @@ import {
 	ASB_RECEIPT_NEAR_END,
 	PrinterCondition,
 } from './printer.js'
-import { startServer, waitFor, type TestServer } from './test-server.js'
+import { eposJob, startServer, waitFor, type TestServer } from './test-server.js'
 
 const ASB_PRINT_SUCCESS = 0x2
 const ASB_DRAWER_KICK = 0x4
@@ -40,6 +40,19 @@ describe('PrinterCondition', () => {
 		printer.update({ paperNearEnd: true })
 		expect(printer.isOnline).toBe(true)
 		expect(printer.statusBits).toBe(ASB_RECEIPT_NEAR_END)
+	})
+
+	it('takes a response delay in whole milliseconds up to a minute, and never answering', () => {
+		const printer = new PrinterCondition()
+		expect(printer.update({ responseDelayMs: 2500, noResponse: true })).toBe(true)
+		expect(printer.responseDelayMs).toBe(2500)
+		expect(printer.noResponse).toBe(true)
+		for (const bad of [-1, 1.5, 60_001, '100', null]) {
+			expect(printer.update({ responseDelayMs: bad })).toBe(false)
+		}
+		expect(printer.update({ noResponse: 'yes' })).toBe(false)
+		expect(printer.responseDelayMs).toBe(2500)
+		expect(printer.isOnline).toBe(true)
 	})
 
 	it('rejects unknown conditions and non-boolean values', () => {
@@ -88,7 +101,7 @@ describe('printer conditions over HTTP', () => {
 	afterAll(() => server.stop())
 
 	afterEach(async () => {
-		await setCondition({ coverOpen: false, paperEnd: false, paperNearEnd: false })
+		await setCondition({ coverOpen: false, paperEnd: false, paperNearEnd: false, responseDelayMs: 0, noResponse: false })
 		await fetch(`${server.baseUrl}/drawer/close`, { method: 'POST' })
 	})
 
@@ -98,6 +111,8 @@ describe('printer conditions over HTTP', () => {
 			coverOpen: false,
 			paperEnd: false,
 			paperNearEnd: false,
+			responseDelayMs: 0,
+			noResponse: false,
 		})
 		expect(await server.postEpos('')).toEqual({ success: true, code: '', status: ASB_PRINT_SUCCESS })
 	})
@@ -148,6 +163,44 @@ describe('printer conditions over HTTP', () => {
 		await setCondition({ coverOpen: false })
 		await sent
 		await waitFor(drawerOpen)
+	})
+
+	it('answers after the response delay, with the job already printed', async () => {
+		await setCondition({ responseDelayMs: 800 })
+		const started = Date.now()
+		const answered = server.postEpos('<text>Slow</text>')
+		await waitFor(async () => (await (await fetch(`${server.baseUrl}/jobs`)).json()).some((job: { text: string }) => job.text === 'Slow'))
+		expect(Date.now() - started).toBeLessThan(800)
+		expect((await answered).success).toBe(true)
+		expect(Date.now() - started).toBeGreaterThanOrEqual(750)
+	})
+
+	it('delays status requests too', async () => {
+		await setCondition({ responseDelayMs: 500 })
+		const started = Date.now()
+		await server.postEpos('')
+		expect(Date.now() - started).toBeGreaterThanOrEqual(450)
+	})
+
+	it('prints but never answers, and lets go when the client gives up', async () => {
+		await setCondition({ noResponse: true })
+		const abort = new AbortController()
+		const request = fetch(`${server.baseUrl}/cgi-bin/epos/service.cgi`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'text/xml' },
+			body: eposJob('<text>Unanswered</text><pulse/>'),
+			signal: abort.signal,
+		})
+		await waitFor(drawerOpen)
+		setTimeout(() => abort.abort(), 300)
+		await expect(request).rejects.toThrow()
+		const jobs = await (await fetch(`${server.baseUrl}/jobs`)).json()
+		expect(jobs.at(-1)).toMatchObject({ text: 'Unanswered', printed: true, drawerPulses: 1 })
+		// Status requests are still answered, and print jobs are again once
+		// the printer answers.
+		expect((await server.postEpos('')).success).toBe(true)
+		await setCondition({ noResponse: false })
+		expect((await server.postEpos('<text>Answered</text>')).success).toBe(true)
 	})
 
 	it('rejects a malformed change', async () => {
