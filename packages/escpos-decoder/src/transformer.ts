@@ -30,6 +30,22 @@ export interface PrinterState {
 	qrModuleSize: number
 	qrErrorCorrection: QrErrorCorrectionLevel
 	qrData: string
+	/** Text encoding of the character code table selected with ESC t. */
+	encoding: string
+}
+
+// ESC t n code tables iconv can decode. Without ESC t, text is read as PC852.
+export const defaultEncoding = 'CP852'
+const codeTableEncodings: Record<number, string> = {
+	0: 'CP437',
+	2: 'CP850',
+	3: 'CP860',
+	4: 'CP863',
+	5: 'CP865',
+	16: 'windows-1252',
+	17: 'CP866',
+	18: 'CP852',
+	19: 'CP858',
 }
 
 // Character cell widths in dots: Font A is 12 × 24, Font B 9 × 17.
@@ -399,7 +415,7 @@ export async function parseEscPos(
 
 	const createTextBlock = (state: PrinterState): EscPosText | null => {
 		if (textBuffer.length > 0) {
-			const content = iconv.decode(Buffer.from(textBuffer), 'CP852')
+			const content = iconv.decode(Buffer.from(textBuffer), state.encoding)
 			textBuffer = []
 			return { type: 'text', content: content, ...textStyle(state) }
 		}
@@ -508,6 +524,7 @@ export async function parseEscPos(
 						state.qrModuleSize = 3
 						state.qrErrorCorrection = 'L'
 						state.qrData = ''
+						state.encoding = defaultEncoding
 						parsedBlock = { type: 'command', name: 'Initialize Printer' }
 						consumedBytes = 2
 						break
@@ -730,6 +747,7 @@ export async function parseEscPos(
 					case 0x74: // t - Select character code table
 						if (command.length >= 3) {
 							const n = command[2]
+							state.encoding = codeTableEncodings[n] ?? state.encoding
 							parsedBlock = {
 								type: 'command',
 								name: 'Select Character Code Table',
@@ -970,7 +988,22 @@ export async function parseEscPos(
 						}
 						break
 					case 0x56: // V - Cut Paper (GS V n)
-						if (command.length >= 3) {
+						if (command.length >= 3 && (command[2] === 0x41 || command[2] === 0x42)) {
+							// GS V 65/66 n: feed to the cutting position (plus n), then cut.
+							if (command.length < 4) {
+								return { data: null, consumedBytes: 0 }
+							}
+							parsedBlock = {
+								type: 'command',
+								name: 'Cut Paper',
+								details: {
+									command: 'GS V m n',
+									cutType: command[2] === 0x41 ? 'Full' : 'Partial',
+									feed: command[3],
+								},
+							}
+							consumedBytes = 4
+						} else if (command.length >= 3) {
 							const cutTypeByte = command[2]
 							let cutType = 'Full'
 							if (cutTypeByte === 0x01 || cutTypeByte === 0x31) {
@@ -1402,6 +1435,7 @@ export class EscPosTransformer
 			qrModuleSize: 3,
 			qrErrorCorrection: 'L',
 			qrData: '',
+			encoding: defaultEncoding,
 		}
 	}
 

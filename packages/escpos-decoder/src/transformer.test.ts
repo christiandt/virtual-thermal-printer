@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import iconv from 'iconv-lite'
-import { defaultTabStops, EscPosTransformer, parseEscPos, PrinterState } from './transformer.js'
+import { defaultEncoding, defaultTabStops, EscPosTransformer, parseEscPos, PrinterState } from './transformer.js'
 import { Alignment, ParsedEscPosBlock } from './types.js'
 
 function makeState(): PrinterState {
@@ -28,6 +28,7 @@ function makeState(): PrinterState {
 		qrModuleSize: 3,
 		qrErrorCorrection: 'L',
 		qrData: '',
+		encoding: defaultEncoding,
 	}
 }
 
@@ -520,6 +521,33 @@ describe('parseEscPos', () => {
 			name: 'Cut Paper',
 			details: { command: 'GS V n', cutType: 'Partial' },
 		})
+	})
+
+	it('Cut Paper (GS V 66 n, feed and cut)', async () => {
+		const command = new Uint8Array([0x1d, 0x56, 0x42, 0x00, 0x41])
+		const result = await parseEscPos(command, makeState())
+		expect(result.consumedBytes).toBe(4)
+		expect(result.data).toEqual({
+			type: 'command',
+			name: 'Cut Paper',
+			details: { command: 'GS V m n', cutType: 'Partial', feed: 0 },
+		})
+	})
+
+	it('reads text in the code table ESC t selects', async () => {
+		const state = makeState()
+		await parseEscPos(new Uint8Array([0x1b, 0x74, 16]), state)
+		const result = await parseEscPos(new Uint8Array([...iconv.encode('Blåbær', 'windows-1252'), 0x0a]), state)
+		expect(result.data).toMatchObject({ type: 'text', content: 'Blåbær' })
+	})
+
+	it('keeps the code table for an unknown ESC t and resets it on ESC @', async () => {
+		const state = makeState()
+		await parseEscPos(new Uint8Array([0x1b, 0x74, 5]), state)
+		await parseEscPos(new Uint8Array([0x1b, 0x74, 99]), state)
+		expect(state.encoding).toBe('CP865')
+		await parseEscPos(new Uint8Array([0x1b, 0x40]), state)
+		expect(state.encoding).toBe(defaultEncoding)
 	})
 
 	it('QR Code sequence emits one image', async () => {

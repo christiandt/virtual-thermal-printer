@@ -9,6 +9,8 @@ printer. This tool is designed for developers who need to test point-of-sale
 - **Epson EPOS Support:** Receives and processes Epson EPOS commands via an HTTP endpoint.
 - **ESC/POS Support:** Receives and processes raw ESC/POS commands via a TCP socket.
 - **Web-Based Rendering:** Renders the print output in a real-time web interface.
+- **Cash Drawer:** Simulates a drawer on the kick-out connector: pulses open it,
+  the printer status reports it, and the web interface closes it.
 
 ## Screenshots
 
@@ -64,6 +66,31 @@ curl -X POST \
   --data @packages/virtual-thermal-printer/fixtures/request1.xml \
   http://localhost:8000/cgi-bin/epos/service.cgi
 ```
+
+Besides raw ESC/POS in `<command>`, the endpoint takes the print elements the
+Epson ePOS SDKs send: `<text>` (with `align`, `em`, `ul`, `reverse`, `font`,
+`width`, `height`, `dw`, `dh`, `linespc`), `<feed>`, `<cut>` and `<pulse>`.
+Text is printed in code page WPC1252. Other elements (`<image>`, `<barcode>`,
+…) are skipped and logged. A job without elements prints nothing and returns
+the printer status, which is how clients poll it.
+
+### Cash drawer
+
+A drawer kick pulse opens the simulated cash drawer: `<pulse>` over ePOS,
+`ESC p` or `DLE DC4 1` over either interface. The drawer stays open until it is
+closed with the button in the bottom corner of the web interface, which can
+also open it by hand. While it is open, ePOS responses set the
+`ASB_DRAWER_KICK` bit (`0x4`) of `status`, the drawer sensor reading HIGH.
+
+The drawer can also be read and set over HTTP, e.g. from tests:
+
+```bash
+curl http://localhost:8000/drawer              # {"type":"drawer","open":false}
+curl -X POST http://localhost:8000/drawer/open
+curl -X POST http://localhost:8000/drawer/close
+```
+
+On the shared public server, everyone viewing the page shares the drawer.
 
 ### ESC/POS (TCP Socket)
 

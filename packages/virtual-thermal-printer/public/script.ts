@@ -599,11 +599,16 @@ function connectWebSocket(): void {
 	}
 
 	socket.onmessage = (event: MessageEvent) => {
+		const message: ParsedEscPosBlock | DrawerState = JSON.parse(event.data)
+		if (message.type === 'drawer') {
+			showDrawer(message.open)
+			return
+		}
+		const data = message
 		if (isFirstMessage) {
 			placeholderText.classList.add('is-hidden')
 			isFirstMessage = false
 		}
-		const data: ParsedEscPosBlock = JSON.parse(event.data)
 		console.log(data)
 
 		if (isEscPosImage(data)) {
@@ -705,6 +710,39 @@ function connectWebSocket(): void {
 		}
 	}
 }
+
+// Cash drawer: the printer opens it on a pulse; it is closed (or opened by
+// hand) here.
+interface DrawerState {
+	type: 'drawer'
+	open: boolean
+}
+
+const drawerPanel = document.getElementById('drawer') as HTMLElement
+const drawerStateLabel = document.getElementById('drawer-state') as HTMLElement
+const drawerToggle = document.getElementById('drawer-toggle') as HTMLButtonElement
+let isDrawerOpen: boolean | null = null
+
+function showDrawer(open: boolean): void {
+	if (open && isDrawerOpen === false) {
+		// Replay the kick animation for each opening.
+		drawerPanel.classList.remove('is-kicked')
+		void drawerPanel.offsetWidth
+		drawerPanel.classList.add('is-kicked')
+	}
+	isDrawerOpen = open
+	drawerPanel.hidden = false
+	drawerPanel.classList.toggle('is-open', open)
+	drawerStateLabel.textContent = open ? 'open' : 'closed'
+	drawerToggle.textContent = open ? 'Close' : 'Open'
+}
+
+drawerToggle.addEventListener('click', () => {
+	fetch(`/drawer/${isDrawerOpen ? 'close' : 'open'}`, { method: 'POST' })
+		.then((r) => r.json() as Promise<DrawerState>)
+		.then((state) => showDrawer(state.open))
+		.catch((error) => console.error('Failed to change the cash drawer:', error))
+})
 
 // Initial connection
 connectWebSocket()

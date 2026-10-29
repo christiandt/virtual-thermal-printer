@@ -1,6 +1,10 @@
 import { Readable } from 'node:stream'
 import type { Socket } from 'node:net'
 import { EscPosTransformer } from 'escpos-decoder'
+import type { ParsedEscPosBlock } from 'escpos-decoder/types'
+
+/** Called with every decoded block, before it is sent to the web clients. */
+export type BlockHandler = (block: ParsedEscPosBlock) => void
 
 const ESC = 0x1b
 const INITIALIZE_PRINTER = 0x40 // '@' - the byte after ESC in "ESC @"
@@ -98,6 +102,7 @@ export async function processEscPosStream(
 	stream: ReadableStream<Uint8Array>,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	connectedClients: Set<any>,
+	onBlock?: BlockHandler,
 ) {
 	const escPosTransformer = new TransformStream(new EscPosTransformer())
 
@@ -110,6 +115,7 @@ export async function processEscPosStream(
 				const { done, value: block } = await reader.read()
 				if (done) break
 
+				onBlock?.(block)
 				const dataToSend = JSON.stringify(block)
 				for (const client of connectedClients) {
 					client.send(dataToSend)
@@ -127,6 +133,7 @@ export async function handleConnection(
 	socket: Socket,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	connectedClients: Set<any>,
+	onBlock?: BlockHandler,
 ) {
 	const remoteAddressString = socket.remoteAddress && socket.remotePort
 		? `${socket.remoteAddress}:${socket.remotePort}`
@@ -140,6 +147,7 @@ export async function handleConnection(
 				new TransformStream(new ProbeFilterTransformer()),
 			),
 			connectedClients,
+			onBlock,
 		)
 	} catch (error) {
 		if (!(error instanceof Error && error.message.includes('terminate'))) {
