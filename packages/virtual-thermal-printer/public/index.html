@@ -23,38 +23,45 @@
 	<body>
 		<span id="version"></span>
 		<aside id="device-panel" class="device-panel" hidden>
-			<div id="printer" class="device-row">
-				<span class="device-light" aria-hidden="true"></span>
-				<span class="device-label">Printer <strong id="printer-state" aria-live="polite">on line</strong></span>
-			</div>
-			<div class="device-toggles" role="group" aria-label="Printer conditions">
-				<button type="button" data-condition="coverOpen" aria-pressed="false">Cover open</button>
-				<button type="button" data-condition="paperNearEnd" aria-pressed="false">Paper low</button>
-				<button type="button" data-condition="paperEnd" aria-pressed="false">Paper out</button>
+			<button type="button" id="device-panel-toggle" class="device-panel-toggle" aria-expanded="true" aria-controls="device-panel-body">
+				<span class="device-light" data-mirror="printer" aria-hidden="true"></span>
+				<span class="device-light" data-mirror="drawer" aria-hidden="true"></span>
+				<span id="device-panel-toggle-text">Hide</span>
+			</button>
+			<div id="device-panel-body" class="device-panel-body">
+				<div id="printer" class="device-row">
+					<span class="device-light" aria-hidden="true"></span>
+					<span class="device-label">Printer <strong id="printer-state" aria-live="polite">on line</strong></span>
+				</div>
+				<div class="device-toggles" role="group" aria-label="Printer conditions">
+					<button type="button" data-condition="coverOpen" aria-pressed="false">Cover open</button>
+					<button type="button" data-condition="paperNearEnd" aria-pressed="false">Paper low</button>
+					<button type="button" data-condition="paperEnd" aria-pressed="false">Paper out</button>
+					<label class="device-response">
+						Answers
+						<select id="printer-response">
+							<option value="0">at once</option>
+							<option value="2000">after 2 s</option>
+							<option value="5000">after 5 s</option>
+							<option value="10000">after 10 s</option>
+							<option value="20000">after 20 s</option>
+							<option value="never">never to print jobs</option>
+						</select>
+					</label>
+				</div>
+				<div id="drawer" class="device-row">
+					<span class="device-light" aria-hidden="true"></span>
+					<span class="device-label">Cash drawer <strong id="drawer-state" aria-live="polite">closed</strong></span>
+					<button type="button" id="drawer-toggle">Open</button>
+				</div>
 				<label class="device-response">
-					Answers
-					<select id="printer-response">
-						<option value="0">at once</option>
-						<option value="2000">after 2 s</option>
-						<option value="5000">after 5 s</option>
-						<option value="10000">after 10 s</option>
-						<option value="20000">after 20 s</option>
-						<option value="never">never to print jobs</option>
+					Sensor reads HIGH when
+					<select id="drawer-sensor">
+						<option value="open">open (most drawers)</option>
+						<option value="closed">closed</option>
 					</select>
 				</label>
 			</div>
-			<div id="drawer" class="device-row">
-				<span class="device-light" aria-hidden="true"></span>
-				<span class="device-label">Cash drawer <strong id="drawer-state" aria-live="polite">closed</strong></span>
-				<button type="button" id="drawer-toggle">Open</button>
-			</div>
-			<label class="device-response">
-				Sensor reads HIGH when
-				<select id="drawer-sensor">
-					<option value="open">open (most drawers)</option>
-					<option value="closed">closed</option>
-				</select>
-			</label>
 		</aside>
 		<div class="content">
 			<div id="printer-output">
