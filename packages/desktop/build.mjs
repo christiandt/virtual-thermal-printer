@@ -49,6 +49,9 @@ if (process.argv.includes('--package')) {
 			: undefined,
 		publish: 'never',
 		config: {
+			// No auto-update, so no latest*.yml. Without this, electron-builder
+			// still writes update info for the mac zip and fails doing so.
+			publish: null,
 			appId: 'io.github.christiandt.virtual-thermal-printer',
 			productName: 'Virtual Thermal Printer',
 			artifactName: 'virtual-thermal-printer-desktop-${version}-${os}-${arch}.${ext}',
@@ -63,8 +66,14 @@ if (process.argv.includes('--package')) {
 					{ target: 'dmg', arch: ['arm64', 'x64'] },
 					{ target: 'zip', arch: ['arm64', 'x64'] },
 				],
-				// Not signed with a Developer ID yet: ad-hoc signature only.
-				identity: null,
+				// Not signed with a Developer ID yet: ad-hoc signature only. Left
+				// unsigned (identity: null), the x64 app has no signature and the
+				// arm64 one an incomplete seal, and macOS calls a downloaded copy
+				// "damaged" instead of offering to open it anyway.
+				identity: '-',
+				// The hardened runtime's library validation rejects ad-hoc signed
+				// frameworks, so the app would not launch.
+				hardenedRuntime: false,
 			},
 			win: { target: [{ target: 'nsis', arch: ['x64'] }, { target: 'portable', arch: ['x64'] }] },
 			portable: { artifactName: 'virtual-thermal-printer-desktop-${version}-win-portable-${arch}.${ext}' },
