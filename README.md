@@ -13,6 +13,7 @@ printer. This tool is designed for developers who need to test point-of-sale
   the printer status reports it, and the web interface closes it.
 - **Printer Conditions:** Cover open, paper out and paper low, set from the web
   interface and reported the way a TM printer does.
+- **Job Log:** The last 100 print jobs as text over HTTP, for automated tests.
 
 ## Screenshots
 
@@ -122,6 +123,30 @@ Connect to port `9100` and send raw ESC/POS bytes, e.g. via `netcat`:
 ```bash
 echo -e "\x1b\x40Hello\x0a" | nc localhost 9100
 ```
+
+### Print jobs (for tests)
+
+The printer keeps its last 100 jobs, so automated tests can check what was
+printed without looking at the page. An ePOS request is one job and a socket
+connection is one job. Status requests are not jobs. A job refused while the
+printer is off line is kept with `"printed": false` and its error code.
+
+```bash
+curl http://localhost:8000/jobs             # all jobs, oldest first
+curl http://localhost:8000/jobs?since=12    # only jobs after job 12
+curl http://localhost:8000/jobs/13          # one job, with its decoded blocks
+curl -X DELETE http://localhost:8000/jobs   # forget them all
+```
+
+```json
+[{ "id": 13, "source": "epos", "receivedAt": "2026-10-29T12:31:07.412Z",
+   "printJobId": null, "printed": true, "errorCode": null,
+   "text": "KOPI\nBårebukett          599,00\n\n\n", "cuts": 1, "drawerPulses": 0 }]
+```
+
+`text` is the printed text, with feeds as line breaks and images as
+`[image W×H]`. `/jobs/:id` adds `blocks`, the decoded ESC/POS blocks with
+alignment, size and emphasis, for checks on how something was printed.
 
 ## Docker
 

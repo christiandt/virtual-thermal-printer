@@ -14,6 +14,7 @@ import { handleConnection, processEscPosStream } from './escpos.js'
 import { ASB_DRAWER_KICK, ASB_PRINT_SUCCESS, eposResponse, parseEposRequest } from './epos.js'
 import { CashDrawer } from './drawer.js'
 import { PrinterCondition } from './printer.js'
+import { JobLog } from './jobs.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -65,6 +66,7 @@ app.get('/version', (context) => context.text(appVersion))
 const drawer = new CashDrawer()
 const handleBlock = drawer.handleBlock.bind(drawer)
 const printer = new PrinterCondition()
+const jobs = new JobLog()
 
 function printerStatus(): number {
 	return (
@@ -89,6 +91,7 @@ app.post(eposEndpoint, async (context) => {
 	if (!printer.isOnline) {
 		if (!job.isStatusRequest) {
 			console.log(`ePOS job refused, printer off line (${printer.errorCode}).`)
+			jobs.refused('epos', job.printJobId, printer.errorCode!)
 		}
 		return context.text(eposResponse(printerStatus(), job.printJobId, printer.errorCode), 200, {
 			'Content-Type': 'text/xml',
@@ -102,7 +105,12 @@ app.post(eposEndpoint, async (context) => {
 				controller.close()
 			},
 		})
-		await processEscPosStream(stream, connectedClients, handleBlock)
+		const recorder = jobs.start('epos', job.printJobId)
+		await processEscPosStream(stream, connectedClients, (block) => {
+			handleBlock(block)
+			recorder.add(block)
+		})
+		recorder.finish()
 	}
 
 	return context.text(eposResponse(printerStatus(), job.printJobId), 200, {
@@ -118,6 +126,19 @@ app.post('/drawer/open', (context) => {
 app.post('/drawer/close', (context) => {
 	drawer.set(false)
 	return context.json(drawer.state)
+})
+
+app.get('/jobs', (context) => {
+	const since = Number(context.req.query('since') ?? 0)
+	return context.json(jobs.list(Number.isFinite(since) ? since : 0))
+})
+app.get('/jobs/:id', (context) => {
+	const job = jobs.get(Number(context.req.param('id')))
+	return job ? context.json(job) : context.text('No such job', 404)
+})
+app.delete('/jobs', (context) => {
+	jobs.clear()
+	return context.body(null, 204)
 })
 
 app.get('/printer', (context) => context.json(printer.state))
@@ -210,7 +231,16 @@ drawer.onChange(broadcast)
 printer.onChange(broadcast)
 
 const escposServer = createServer((socket) => {
-	handleConnection(socket, connectedClients, handleBlock, () => printer.whenOnline())
+	const recorder = jobs.start('socket')
+	handleConnection(
+		socket,
+		connectedClients,
+		(block) => {
+			handleBlock(block)
+			recorder.add(block)
+		},
+		() => printer.whenOnline(),
+	).finally(() => recorder.finish())
 })
 escposServer.listen(socketPort, '0.0.0.0', () => {
 	console.log(`Listening to Socket on port ${socketPort}.`)
