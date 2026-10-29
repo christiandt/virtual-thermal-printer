@@ -59,15 +59,17 @@ export class JobRecorder {
 			this.#page ??= ''
 		} else if (block.name === 'Print Page') {
 			// ESC FF prints the page and keeps it for further printing.
-			if (this.#page !== null) this.#printPage(this.#page)
+			this.#printPage()
 		} else if (block.name === 'Form Feed') {
-			if (this.#page !== null) this.#printPage(this.#page)
+			this.#printPage()
 			this.#page = null
 		} else if (block.name === 'Cancel Page Data') {
 			if (this.#page !== null) this.#page = ''
 		} else if (block.name === 'Select Standard Mode' || block.name === 'Initialize Printer') {
 			this.#page = null
 		} else if (block.name === 'Cut Paper') {
+			// A cut ends the row in standard mode, as in the renderer.
+			if (this.#page === null) this.#endLine()
 			job.cuts++
 		} else if (
 			block.name === 'Generate Pulse' ||
@@ -90,8 +92,12 @@ export class JobRecorder {
 		}
 	}
 
-	#printPage(page: string): void {
-		this.#job.text += page && !page.endsWith('\n') ? `${page}\n` : page
+	/** Print the page, ending its open row first: what follows starts on a
+	 *  new row of the kept page, as in the renderer. */
+	#printPage(): void {
+		if (this.#page === null) return
+		this.#endLine()
+		this.#job.text += this.#page
 	}
 
 	/** Record the job; a socket connection that decoded nothing is not one. */

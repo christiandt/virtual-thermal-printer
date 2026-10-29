@@ -60,6 +60,16 @@ describe('JobLog', () => {
 		expect(log.list()[0].text).toBe('A\nB')
 	})
 
+	it('ends the line on a cut', () => {
+		const log = new JobLog()
+		const recorder = log.start('epos')
+		recorder.add(text('A'))
+		recorder.add({ type: 'command', name: 'Cut Paper' })
+		recorder.add(text('B'))
+		recorder.finish()
+		expect(log.list()[0].text).toBe('A\nB')
+	})
+
 	it('keeps page-mode text only when the page is printed', () => {
 		const log = new JobLog()
 		const recorder = log.start('socket')
@@ -81,7 +91,7 @@ describe('JobLog', () => {
 		recorder.add(text('never printed'))
 		command('Cut Paper')
 		recorder.finish()
-		expect(log.list()[0]).toMatchObject({ text: 'page\npage more\n', cuts: 1 })
+		expect(log.list()[0]).toMatchObject({ text: 'page\npage\n more\n', cuts: 1 })
 	})
 
 	it('does not record a job that decoded nothing', () => {
