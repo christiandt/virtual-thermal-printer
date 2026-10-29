@@ -15,6 +15,8 @@ printer. This tool is designed for developers who need to test point-of-sale
   interface and reported the way a TM printer does, and a slow or silent
   printer to test POS timeouts.
 - **Job Log:** The last 100 print jobs as text over HTTP, for automated tests.
+- **HTTPS:** Optional, with a generated self-signed certificate, as on a TM
+  printer.
 
 ## Screenshots
 
@@ -50,6 +52,39 @@ Both ports can be overridden:
 ```bash
 ./virtual-thermal-printer --http 8080 --socket 9100
 ```
+
+### HTTPS
+
+A TM printer serves ePOS-Print over HTTPS with its own self-signed
+certificate, and a POS served over HTTPS can only reach it that way (browsers
+block mixed content). To test that, give the simulator an HTTPS port too:
+
+```bash
+./virtual-thermal-printer --http 8000 --socket 9100 --https 8443
+```
+
+On first start it generates a self-signed certificate and saves it to
+`~/.virtual-thermal-printer/https-cert.pem` and `https-key.pem` (or to
+`--cert` / `--key`), so the browser's acceptance survives restarts. The
+certificate names `localhost`, the host name and this machine's network
+addresses, so a POS can reach the printer by IP as on a shop network; the log
+prints them with the certificate's SHA-256 fingerprint. As with a real
+printer, open `https://<address>:8443/` once in the POS's browser and accept
+the certificate, or requests from the POS fail as if the printer were
+unreachable. Delete the two files to get a new certificate, for example after
+the machine's address has changed.
+
+In Docker, map the port and pass the flag:
+
+```bash
+docker run --rm -p 8000:80 -p 9100:9100 -p 8443:443 virtual-thermal-printer npm start -- --https 443
+```
+
+A certificate generated inside the container names the container, not the
+host, so it only matches `localhost`. To reach the printer by the host's
+address, generate the certificate on the host (run the simulator there once
+with `--https`) and mount it:
+`-v ~/.virtual-thermal-printer:/root/.virtual-thermal-printer`.
 
 ## Sending Print Commands
 
