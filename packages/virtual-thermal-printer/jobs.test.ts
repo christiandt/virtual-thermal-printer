@@ -70,6 +70,30 @@ describe('JobLog', () => {
 		expect(log.list()[0].text).toBe('A\nB')
 	})
 
+	it('starts an image on a row of its own, and ends the row on a zero-line feed', () => {
+		const log = new JobLog()
+		const recorder = log.start('epos')
+		recorder.add(text('A'))
+		recorder.add({ type: 'image', width: 8, height: 8, base64: '', alignment: Alignment.Left })
+		recorder.add(text('B'))
+		recorder.add({ type: 'command', name: 'Print and Feed Lines', details: { lines: 0 } })
+		recorder.add(text('C'))
+		recorder.finish()
+		expect(log.list()[0].text).toBe('A\n[image 8×8]\nB\nC')
+	})
+
+	it('prints a page begun in an earlier job', () => {
+		const log = new JobLog()
+		const first = log.start('epos')
+		first.add({ type: 'command', name: 'Select Page Mode' })
+		first.add(text('held'))
+		first.finish()
+		const second = log.start('epos')
+		second.add({ type: 'command', name: 'Form Feed' })
+		second.finish()
+		expect(log.list().map((job) => job.text)).toEqual(['', 'held\n'])
+	})
+
 	it('keeps page-mode text only when the page is printed', () => {
 		const log = new JobLog()
 		const recorder = log.start('socket')

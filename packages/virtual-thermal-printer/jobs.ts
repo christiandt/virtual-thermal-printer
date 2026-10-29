@@ -33,15 +33,21 @@ export interface Job extends JobSummary {
 export class JobRecorder {
 	readonly #job: Job
 	readonly #keep: (job: Job) => void
+	readonly #pages: PageBuffer
 
-	constructor(job: Job, keep: (job: Job) => void) {
+	constructor(job: Job, keep: (job: Job) => void, pages: PageBuffer) {
 		this.#job = job
 		this.#keep = keep
+		this.#pages = pages
 	}
 
-	// Page-mode text, held until the page is printed: like the renderer, a
-	// page that is cancelled or left unprinted never reaches the paper.
-	#page: string | null = null
+	get #page(): string | null {
+		return this.#pages.text
+	}
+
+	set #page(text: string | null) {
+		this.#pages.text = text
+	}
 
 	add(block: ParsedEscPosBlock): void {
 		const job = this.#job
@@ -49,9 +55,14 @@ export class JobRecorder {
 		if (block.type === 'text') {
 			this.#write(block.content.replace(/\r/g, ''))
 		} else if (block.type === 'image') {
+			// An image starts on a row of its own.
+			this.#endLine()
 			this.#write(`[image ${block.width}×${block.height}]\n`)
 		} else if (block.name === 'Print and Feed Lines') {
-			this.#write('\n'.repeat(Number(block.details?.lines ?? 0)))
+			// ESC d 0 prints the row without feeding: it still ends it.
+			const lines = Number(block.details?.lines ?? 0)
+			if (lines === 0) this.#endLine()
+			else this.#write('\n'.repeat(lines))
 		} else if (block.name === 'Print and Feed Paper') {
 			// ESC J n prints the row and feeds n dots: the row ends here.
 			this.#endLine()
@@ -108,12 +119,20 @@ export class JobRecorder {
 	}
 }
 
+/** Page-mode text held until the page is printed. It belongs to the
+ *  printer, not to one job: like the renderer, a page begun in one job can be
+ *  printed by the next, and a cancelled or unprinted page never prints. */
+export interface PageBuffer {
+	text: string | null
+}
+
 export class JobLog {
 	#jobs: Job[] = []
 	#nextId = 1
+	#pages: PageBuffer = { text: null }
 
 	start(source: Job['source'], printJobId: string | null = null): JobRecorder {
-		return new JobRecorder(this.#newJob(source, printJobId), (job) => this.#keep(job))
+		return new JobRecorder(this.#newJob(source, printJobId), (job) => this.#keep(job), this.#pages)
 	}
 
 	/** Keep a job the printer refused: it printed nothing. */
