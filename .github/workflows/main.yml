@@ -24,3 +24,12 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # The desktop app's main process must still bundle. Its own
+      # dependencies are installed without scripts, so Electron itself is not
+      # downloaded for this check.
+      - name: Bundle the desktop app
+        working-directory: packages/desktop
+        run: |
+          npm ci --ignore-scripts
+          npm run build

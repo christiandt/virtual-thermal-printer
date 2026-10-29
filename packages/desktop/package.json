@@ -1,0 +1,20 @@
+{
+	"name": "virtual-thermal-printer-desktop",
+	"productName": "Virtual Thermal Printer",
+	"description": "The virtual thermal printer as a desktop app.",
+	"version": "0.0.0",
+	"license": "MIT",
+	"private": true,
+	"main": "dist/main.cjs",
+	"scripts": {
+		"build": "node build.mjs",
+		"start": "node build.mjs && electron .",
+		"dist": "node build.mjs --package",
+		"pack": "node build.mjs --package --dir"
+	},
+	"devDependencies": {
+		"electron": "44.7.2",
+		"electron-builder": "26.17.0",
+		"esbuild": "0.24.2"
+	}
+}

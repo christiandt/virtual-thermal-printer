@@ -885,6 +885,86 @@ drawerSensor.addEventListener('change', () => {
 		.catch((error) => console.error('Failed to change the drawer sensor:', error))
 })
 
+// Where a POS reaches this printer, from GET /info.
+interface PrinterInfo {
+	httpPort: number
+	httpsPort: number | null
+	socketPort: number
+	eposPath: string
+	hosts: string[]
+}
+
+const connect = document.getElementById('connect') as HTMLDetailsElement
+const connectPrimary = document.getElementById('connect-primary') as HTMLElement
+const connectList = document.getElementById('connect-list') as HTMLElement
+
+function copyText(text: string, button: HTMLButtonElement): void {
+	const done = () => {
+		button.textContent = 'Copied'
+		setTimeout(() => (button.textContent = 'Copy'), 1500)
+	}
+	// The clipboard API needs a secure context (localhost or HTTPS); without
+	// it the address can still be selected with one click (user-select: all).
+	if (!navigator.clipboard) {
+		button.textContent = 'Select it'
+		return
+	}
+	navigator.clipboard.writeText(text).then(done, () => (button.textContent = 'Select it'))
+}
+
+const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]']
+
+/** The addresses to show: the one this page was opened at first, which is
+ *  reachable by definition. The server's own ports only add more when the
+ *  page reached it on one of them; behind a port mapping (Docker) they are
+ *  the ports inside it, which a POS may not reach. */
+function connectionRows(info: PrinterInfo): [string, string][] {
+	const https = location.protocol === 'https:'
+	const pagePort = Number(location.port || (https ? 443 : 80))
+	const rows: [string, string][] = [[`ePOS (${https ? 'HTTPS' : 'HTTP'})`, location.origin]]
+	const mapped = pagePort !== (https ? info.httpsPort : info.httpPort)
+	if (mapped) {
+		const inside = [`HTTP ${info.httpPort}`, info.httpsPort !== null ? `HTTPS ${info.httpsPort}` : null, `raw ESC/POS ${info.socketPort}`]
+		rows.push(['Ports inside', `${inside.filter(Boolean).join(', ')} (mapped, e.g. by Docker)`])
+		rows.push(['ePOS path', info.eposPath])
+		return rows
+	}
+	const host = location.hostname
+	if (https) rows.push(['ePOS (HTTP)', `http://${host}:${info.httpPort}`])
+	else if (info.httpsPort !== null) rows.push(['ePOS (HTTPS)', `https://${host}:${info.httpsPort}`])
+	if (LOCAL_HOSTNAMES.includes(host)) {
+		// Opened on this machine: a POS elsewhere uses its network address.
+		for (const address of info.hosts.slice(1)) rows.push(['On the network', `http://${address}:${info.httpPort}`])
+	}
+	rows.push(['ePOS path', info.eposPath], ['Raw ESC/POS', `${host}:${info.socketPort}`])
+	return rows
+}
+
+function showConnection(info: PrinterInfo): void {
+	const rows = connectionRows(info)
+	connectPrimary.textContent = rows[0][1]
+	connectList.replaceChildren()
+	for (const [label, value] of rows) {
+		const term = document.createElement('dt')
+		term.textContent = label
+		const detail = document.createElement('dd')
+		const code = document.createElement('code')
+		code.textContent = value
+		detail.append(code)
+		const button = document.createElement('button')
+		button.type = 'button'
+		button.textContent = 'Copy'
+		button.addEventListener('click', () => copyText(value, button))
+		connectList.append(term, detail, button)
+	}
+	connect.hidden = false
+}
+
+fetch('/info')
+	.then((r) => (r.ok ? (r.json() as Promise<PrinterInfo>) : Promise.reject(new Error(`HTTP ${r.status}`))))
+	.then(showConnection)
+	.catch((error) => console.error('Failed to read the printer info:', error))
+
 // Initial connection
 connectWebSocket()
 
