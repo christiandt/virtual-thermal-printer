@@ -17,10 +17,11 @@
 		"version:bump": "tsx --conditions=source scripts/version.ts"
 	},
 	"dependencies": {
-		"escpos-decoder": "*",
 		"@hono/node-server": "^1.13.7",
+		"escpos-decoder": "*",
 		"hono": "^4.6.5",
 		"iconv-lite": "^0.6.3",
+		"selfsigned": "^2.4.1",
 		"ws": "^8.20.0"
 	},
 	"devDependencies": {

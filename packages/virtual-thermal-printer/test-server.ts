@@ -37,26 +37,35 @@ export interface EposResult {
 export interface TestServer {
 	baseUrl: string
 	socketPort: number
+	/** The HTTPS URL, when started with `https`. */
+	httpsUrl: string | null
 	postEpos(body: string): Promise<EposResult>
 	/** Send raw bytes to the ESC/POS socket and close it. */
 	sendRaw(bytes: number[]): Promise<void>
 	stop(): Promise<void>
 }
 
-export async function startServer(): Promise<TestServer> {
+export interface ServerOptions {
+	/** Serve HTTPS too, with the certificate at these paths (generated when missing). */
+	https?: { certPath: string; keyPath: string }
+}
+
+export async function startServer(options: ServerOptions = {}): Promise<TestServer> {
 	const httpPort = 7000 + Math.floor(Math.random() * 1000)
 	const socketPort = 8100 + Math.floor(Math.random() * 1000)
+	const httpsPort = 9200 + Math.floor(Math.random() * 1000)
 	const baseUrl = `http://127.0.0.1:${httpPort}`
-	const serverProcess = spawn(
-		process.execPath,
-		['--import', 'tsx/esm', '--conditions=source', join(__dirname, 'main.ts'), '--http', `${httpPort}`, '--socket', `${socketPort}`],
-		{ stdio: 'inherit' },
-	)
+	const args = ['--import', 'tsx/esm', '--conditions=source', join(__dirname, 'main.ts'), '--http', `${httpPort}`, '--socket', `${socketPort}`]
+	if (options.https) {
+		args.push('--https', `${httpsPort}`, '--cert', options.https.certPath, '--key', options.https.keyPath)
+	}
+	const serverProcess = spawn(process.execPath, args, { stdio: 'inherit' })
 	await waitFor(async () => (await fetch(`${baseUrl}/health`)).ok, 40)
 
 	return {
 		baseUrl,
 		socketPort,
+		httpsUrl: options.https ? `https://localhost:${httpsPort}` : null,
 		async postEpos(body) {
 			const response = await fetch(`${baseUrl}/cgi-bin/epos/service.cgi`, {
 				method: 'POST',

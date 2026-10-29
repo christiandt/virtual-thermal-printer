@@ -7,12 +7,14 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:net'
+import { createServer as createHttpsServer } from 'node:https'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { isSea, getAsset } from 'node:sea'
 import { handleConnection, processEscPosStream } from './escpos.js'
 import { ASB_DRAWER_KICK, ASB_PRINT_SUCCESS, eposResponse, parseEposRequest } from './epos.js'
 import { CashDrawer } from './drawer.js'
+import { DEFAULT_CERT_PATH, DEFAULT_KEY_PATH, loadOrCreateCertificate } from './https.js'
 import { PrinterCondition } from './printer.js'
 import { JobLog } from './jobs.js'
 
@@ -44,6 +46,10 @@ const { values: flags } = parseArgs({
 	options: {
 		http: { type: 'string', default: '80' },
 		socket: { type: 'string', default: '9100' },
+		// HTTPS is off unless a port is given.
+		https: { type: 'string' },
+		cert: { type: 'string', default: DEFAULT_CERT_PATH },
+		key: { type: 'string', default: DEFAULT_KEY_PATH },
 	},
 })
 
@@ -57,6 +63,7 @@ function validatePort(portValue: string | number, portName: string): number {
 
 const httpPort = validatePort(flags['http'] ?? '80', 'HTTP')
 const socketPort = validatePort(flags['socket'] ?? '9100', 'Socket')
+const httpsPort = flags['https'] === undefined ? null : validatePort(flags['https'], 'HTTPS')
 
 const app = new Hono()
 
@@ -217,15 +224,39 @@ const server: ServerType = serve(
 
 const wss = new WebSocketServer({ noServer: true })
 
-server.on('upgrade', (request, socket, head) => {
-	if (request.url === '/stream') {
-		wss.handleUpgrade(request, socket, head, (ws) => {
-			wss.emit('connection', ws, request)
-		})
-	} else {
-		socket.destroy()
-	}
-})
+function acceptWebSockets(target: ServerType): void {
+	target.on('upgrade', (request, socket, head) => {
+		if (request.url === '/stream') {
+			wss.handleUpgrade(request, socket, head, (ws) => {
+				wss.emit('connection', ws, request)
+			})
+		} else {
+			socket.destroy()
+		}
+	})
+}
+acceptWebSockets(server)
+
+if (httpsPort !== null) {
+	const certificate = loadOrCreateCertificate(flags['cert']!, flags['key']!)
+	console.log(
+		`${certificate.generated ? 'Generated a self-signed certificate' : 'Using the certificate'} at ${flags['cert']}` +
+			` for ${certificate.names.join(', ')} (SHA-256 ${certificate.fingerprint}).`,
+	)
+	const httpsServer: ServerType = serve(
+		{
+			fetch: app.fetch,
+			port: httpsPort,
+			hostname: '0.0.0.0',
+			createServer: createHttpsServer,
+			serverOptions: { cert: certificate.cert, key: certificate.key },
+		},
+		(info) => {
+			console.log(`Listening to HTTPS on https://${info.address}:${info.port}.`)
+		},
+	)
+	acceptWebSockets(httpsServer)
+}
 
 wss.on('connection', (ws) => {
 	console.log('WebSocket opened.')

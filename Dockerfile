@@ -29,9 +29,11 @@ COPY --from=builder /app/packages/virtual-thermal-printer/epos.ts ./packages/vir
 COPY --from=builder /app/packages/virtual-thermal-printer/drawer.ts ./packages/virtual-thermal-printer/drawer.ts
 COPY --from=builder /app/packages/virtual-thermal-printer/printer.ts ./packages/virtual-thermal-printer/printer.ts
 COPY --from=builder /app/packages/virtual-thermal-printer/jobs.ts ./packages/virtual-thermal-printer/jobs.ts
+COPY --from=builder /app/packages/virtual-thermal-printer/https.ts ./packages/virtual-thermal-printer/https.ts
 COPY --from=builder /app/packages/virtual-thermal-printer/settings.ts ./packages/virtual-thermal-printer/settings.ts
 
 EXPOSE 80
+EXPOSE 443
 EXPOSE 9100
 
 WORKDIR /app/packages/virtual-thermal-printer
