@@ -146,10 +146,22 @@ describe('JobLog', () => {
 		expect(log.list()[0]).toMatchObject({ text: 'page\npage\n more\n', cuts: 1 })
 	})
 
-	it('does not record a job that decoded nothing', () => {
+	it('does not record a socket connection that decoded nothing, but does an ePOS request', () => {
 		const log = new JobLog()
 		log.start('socket').finish()
 		expect(log.list()).toEqual([])
+		log.start('epos').finish()
+		expect(log.list()).toMatchObject([{ source: 'epos', printed: true, text: '' }])
+	})
+
+	it('ignores page layout commands in standard mode', () => {
+		const log = new JobLog()
+		const recorder = log.start('epos')
+		recorder.add(text('A'))
+		recorder.add({ type: 'command', name: 'Select Print Direction' })
+		recorder.add(text('B'))
+		recorder.finish()
+		expect(log.list()[0].text).toBe('AB')
 	})
 
 	it('records a refused job as not printed', () => {

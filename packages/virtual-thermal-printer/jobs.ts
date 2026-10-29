@@ -15,6 +15,11 @@ import type { ParsedEscPosBlock } from 'escpos-decoder/types'
 const ROW_ENDING_COMMANDS = new Set([
 	'Print and Feed Paper', // ESC J
 	'Print and Reverse Feed Lines', // ESC e
+])
+
+/** Page layout commands end the row too, but only in page mode: the
+ *  renderer ignores them in standard mode. */
+const PAGE_ROW_ENDING_COMMANDS = new Set([
 	'Set Page Area', // ESC W
 	'Select Print Direction', // ESC T
 	'Set Absolute Vertical Position', // GS $
@@ -81,6 +86,8 @@ export class JobRecorder {
 			else this.#write('\n'.repeat(lines))
 		} else if (ROW_ENDING_COMMANDS.has(block.name)) {
 			this.#endLine()
+		} else if (PAGE_ROW_ENDING_COMMANDS.has(block.name)) {
+			if (this.#page !== null) this.#endLine()
 		} else if (block.name === 'Select Page Mode') {
 			// The standard-mode row ends before the page begins.
 			this.#endLine()
@@ -131,9 +138,10 @@ export class JobRecorder {
 		this.#job.text += this.#page
 	}
 
-	/** Record the job; a socket connection that decoded nothing is not one. */
+	/** Record the job. A socket connection that decoded nothing (a probe) is
+	 *  not one; an ePOS request is, even when it printed nothing. */
 	finish(): void {
-		if (this.#job.blocks.length > 0) {
+		if (this.#job.source === 'epos' || this.#job.blocks.length > 0) {
 			this.#keep(this.#job)
 		}
 	}
