@@ -12,7 +12,8 @@ printer. This tool is designed for developers who need to test point-of-sale
 - **Cash Drawer:** Simulates a drawer on the kick-out connector: pulses open it,
   the printer status reports it, and the web interface closes it.
 - **Printer Conditions:** Cover open, paper out and paper low, set from the web
-  interface and reported the way a TM printer does.
+  interface and reported the way a TM printer does, and a slow or silent
+  printer to test POS timeouts.
 - **Job Log:** The last 100 print jobs as text over HTTP, for automated tests.
 
 ## Screenshots
@@ -105,6 +106,17 @@ the paper low, to test how a POS handles a printer that cannot print:
 | Cover open | `success="false" code="EPTR_COVER_OPEN"`, status `ASB_OFF_LINE \| ASB_COVER_OPEN` | held until the cover is closed |
 | Paper out | `success="false" code="EPTR_REC_EMPTY"`, status `ASB_OFF_LINE \| ASB_RECEIPT_END \| ASB_RECEIPT_NEAR_END` | held until paper is back |
 | Paper low | prints; status adds `ASB_RECEIPT_NEAR_END` | prints |
+
+The printer can also answer slowly, to test how a POS times out:
+
+| Setting | Behaviour |
+|---|---|
+| `responseDelayMs` (0–60000) | every ePOS response, status requests included, waits this long after the job has run |
+| `noResponse` | print jobs run but are never answered; the request is held until the client gives up. Status requests are still answered, so the POS gets as far as printing |
+
+Either way the job prints at once, so a receipt can be on paper while the
+POS is still waiting for, or has given up on, the answer. Both are set from
+the "Answers" list in the web interface, or with `POST /printer`.
 
 While off line the printer runs nothing from an ePOS job, a drawer pulse
 included. Status requests (empty jobs) fail the same way, with the status

@@ -87,18 +87,15 @@ app.post(eposEndpoint, async (context) => {
 		console.log(`ePOS elements not supported, skipped: ${[...new Set(job.unsupported)].join(', ')}.`)
 	}
 
-	// An off-line printer prints nothing and fails the job with its error.
+	let errorCode: string | null = null
 	if (!printer.isOnline) {
+		// An off-line printer prints nothing and fails the job with its error.
+		errorCode = printer.errorCode
 		if (!job.isStatusRequest) {
-			console.log(`ePOS job refused, printer off line (${printer.errorCode}).`)
-			jobs.refused('epos', job.printJobId, printer.errorCode!)
+			console.log(`ePOS job refused, printer off line (${errorCode}).`)
+			jobs.refused('epos', job.printJobId, errorCode!)
 		}
-		return context.text(eposResponse(printerStatus(), job.printJobId, printer.errorCode), 200, {
-			'Content-Type': 'text/xml',
-		})
-	}
-
-	if (!job.isStatusRequest) {
+	} else if (!job.isStatusRequest) {
 		const stream = new ReadableStream({
 			start(controller) {
 				controller.enqueue(job.bytes)
@@ -113,10 +110,34 @@ app.post(eposEndpoint, async (context) => {
 		recorder.finish()
 	}
 
-	return context.text(eposResponse(printerStatus(), job.printJobId), 200, {
+	// The job has run; the answer may be slow, or never come.
+	const signal = context.req.raw.signal
+	if (printer.noResponse && !job.isStatusRequest) {
+		console.log('ePOS response withheld (printer set to never answer print jobs).')
+		await waitUntilAborted(signal, NO_RESPONSE_HOLD_MS)
+	} else if (printer.responseDelayMs > 0) {
+		await waitUntilAborted(signal, printer.responseDelayMs)
+	}
+	return context.text(eposResponse(printerStatus(), job.printJobId, errorCode), 200, {
 		'Content-Type': 'text/xml',
 	})
 })
+
+/** How long a request is held when the printer never answers; clients give
+ *  up long before. */
+const NO_RESPONSE_HOLD_MS = 5 * 60_000
+
+/** Wait for the given time, or until the client gives up on the request. */
+function waitUntilAborted(signal: AbortSignal, ms: number): Promise<void> {
+	return new Promise((resolve) => {
+		if (signal.aborted) return resolve()
+		const timer = setTimeout(resolve, ms)
+		signal.addEventListener('abort', () => {
+			clearTimeout(timer)
+			resolve()
+		}, { once: true })
+	})
+}
 
 app.get('/drawer', (context) => context.json(drawer.state))
 app.post('/drawer/open', (context) => {

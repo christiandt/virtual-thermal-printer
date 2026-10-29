@@ -755,25 +755,40 @@ interface PrinterConditionState {
 	coverOpen: boolean
 	paperEnd: boolean
 	paperNearEnd: boolean
+	responseDelayMs: number
+	noResponse: boolean
 }
-type PrinterCondition = Exclude<keyof PrinterConditionState, 'type'>
+type PrinterCondition = 'coverOpen' | 'paperEnd' | 'paperNearEnd'
 
 const printerRow = document.getElementById('printer') as HTMLElement
 const printerStateLabel = document.getElementById('printer-state') as HTMLElement
 const conditionButtons = document.querySelectorAll<HTMLButtonElement>('[data-condition]')
+const responseSelect = document.getElementById('printer-response') as HTMLSelectElement
+
+function responseText(state: PrinterConditionState): string {
+	if (state.noResponse) return ', never answers print jobs'
+	if (state.responseDelayMs > 0) return `, answers after ${state.responseDelayMs / 1000} s`
+	return ''
+}
 
 function showPrinter(state: PrinterConditionState): void {
 	devicePanel.hidden = false
 	const offline = state.coverOpen || state.paperEnd
 	printerRow.classList.toggle('is-offline', offline)
 	printerRow.classList.toggle('is-warning', !offline && state.paperNearEnd)
-	printerStateLabel.textContent = state.coverOpen
+	printerStateLabel.textContent = (state.coverOpen
 		? 'off line: cover open'
 		: state.paperEnd
 			? 'off line: paper out'
 			: state.paperNearEnd
 				? 'on line: paper low'
-				: 'on line'
+				: 'on line') + responseText(state)
+	const response = state.noResponse ? 'never' : String(state.responseDelayMs)
+	if (![...responseSelect.options].some((option) => option.value === response)) {
+		// A delay set over HTTP that the list does not offer.
+		responseSelect.add(new Option(`after ${state.responseDelayMs / 1000} s`, response), responseSelect.options.length - 1)
+	}
+	responseSelect.value = response
 	for (const button of conditionButtons) {
 		const condition = button.dataset.condition as PrinterCondition
 		button.setAttribute('aria-pressed', String(state[condition]))
@@ -793,6 +808,23 @@ for (const button of conditionButtons) {
 			.catch((error) => console.error('Failed to change the printer condition:', error))
 	})
 }
+
+responseSelect.addEventListener('change', () => {
+	const value = responseSelect.value
+	// "Never" answers status requests at once, so the POS gets as far as
+	// printing whatever delay was picked before.
+	const change = value === 'never'
+		? { noResponse: true, responseDelayMs: 0 }
+		: { noResponse: false, responseDelayMs: Number(value) }
+	fetch('/printer', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(change),
+	})
+		.then((r) => r.json() as Promise<PrinterConditionState>)
+		.then(showPrinter)
+		.catch((error) => console.error('Failed to change the printer response:', error))
+})
 
 // Initial connection
 connectWebSocket()
