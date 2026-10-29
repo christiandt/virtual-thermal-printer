@@ -32,7 +32,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          # Only an existing tag resolves: a branch name fails the run.
+          ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || '' }}
 
       - uses: actions/setup-node@v4
         with:
@@ -100,7 +101,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          # Only an existing tag resolves: a branch name fails the run.
+          ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || '' }}
 
       - uses: actions/setup-node@v4
         with:
@@ -173,5 +175,7 @@ jobs:
             # The release exists (an earlier, partial run): add or replace files.
             gh release upload "$TAG" --repo "$REPO" --clobber "${files[@]}"
           else
-            gh release create "$TAG" --repo "$REPO" --title "Release $TAG" --generate-notes "${files[@]}"
+            # --verify-tag: never create a tag, which would point elsewhere
+            # than the code these files were built from.
+            gh release create "$TAG" --repo "$REPO" --title "Release $TAG" --generate-notes --verify-tag "${files[@]}"
           fi
