@@ -811,8 +811,10 @@ for (const button of conditionButtons) {
 
 responseSelect.addEventListener('change', () => {
 	const value = responseSelect.value
+	// "Never" answers status requests at once, so the POS gets as far as
+	// printing whatever delay was picked before.
 	const change = value === 'never'
-		? { noResponse: true }
+		? { noResponse: true, responseDelayMs: 0 }
 		: { noResponse: false, responseDelayMs: Number(value) }
 	fetch('/printer', {
 		method: 'POST',
