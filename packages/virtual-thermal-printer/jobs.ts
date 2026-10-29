@@ -39,7 +39,8 @@ export interface JobSummary {
 	printed: boolean
 	/** The ePOS error code a refused job failed with. */
 	errorCode: string | null
-	/** The printed text, with feeds as line breaks and images as [image W×H]. */
+	/** The printed text, with feeds as line breaks, QR codes as [QR data]
+	 *  and other images as [image W×H]. */
 	text: string
 	/** Paper cuts in the job. */
 	cuts: number
@@ -78,7 +79,7 @@ export class JobRecorder {
 		} else if (block.type === 'image') {
 			// An image starts on a row of its own.
 			this.#endLine()
-			this.#write(`[image ${block.width}×${block.height}]\n`)
+			this.#write(block.symbolData !== undefined ? `[QR ${block.symbolData}]\n` : `[image ${block.width}×${block.height}]\n`)
 		} else if (block.name === 'Print and Feed Lines') {
 			// ESC d 0 prints the row without feeding: it still ends it.
 			const lines = Number(block.details?.lines ?? 0)

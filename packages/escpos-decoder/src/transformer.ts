@@ -242,6 +242,7 @@ async function renderQrAsImage(
 		height: png.height,
 		base64: `data:image/png;base64,${pngBuffer.toString('base64')}`,
 		alignment: state.alignment,
+		symbolData: state.qrData,
 	}
 	state.qrData = ''
 	return image
