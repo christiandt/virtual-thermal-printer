@@ -103,7 +103,7 @@ describe('JobLog', () => {
 		recorder.add({ type: 'command', name: 'Select Page Mode' })
 		for (const name of ['Set Page Area', 'Select Print Direction', 'Set Absolute Vertical Position', 'Set Relative Vertical Position']) {
 			recorder.add(text(name.split(' ')[1]))
-			recorder.add({ type: 'command', name })
+			recorder.add({ type: 'command', name, details: { x: 0, y: 0, width: 576, height: 400 } })
 		}
 		recorder.add({ type: 'command', name: 'Form Feed' })
 		recorder.finish()
@@ -152,6 +152,18 @@ describe('JobLog', () => {
 		expect(log.list()).toEqual([])
 		log.start('epos').finish()
 		expect(log.list()).toMatchObject([{ source: 'epos', printed: true, text: '' }])
+	})
+
+	it('ignores a page area with no width or height', () => {
+		const log = new JobLog()
+		const recorder = log.start('epos')
+		recorder.add({ type: 'command', name: 'Select Page Mode' })
+		recorder.add(text('A'))
+		recorder.add({ type: 'command', name: 'Set Page Area', details: { x: 0, y: 0, width: 0, height: 100 } })
+		recorder.add(text('B'))
+		recorder.add({ type: 'command', name: 'Form Feed' })
+		recorder.finish()
+		expect(log.list()[0].text).toBe('AB\n')
 	})
 
 	it('ignores page layout commands in standard mode', () => {

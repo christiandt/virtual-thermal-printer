@@ -87,7 +87,10 @@ export class JobRecorder {
 		} else if (ROW_ENDING_COMMANDS.has(block.name)) {
 			this.#endLine()
 		} else if (PAGE_ROW_ENDING_COMMANDS.has(block.name)) {
-			if (this.#page !== null) this.#endLine()
+			// The renderer ignores a page area with no width or height.
+			const emptyArea = block.name === 'Set Page Area' &&
+				(Number(block.details?.width ?? 0) === 0 || Number(block.details?.height ?? 0) === 0)
+			if (this.#page !== null && !emptyArea) this.#endLine()
 		} else if (block.name === 'Select Page Mode') {
 			// The standard-mode row ends before the page begins.
 			this.#endLine()
