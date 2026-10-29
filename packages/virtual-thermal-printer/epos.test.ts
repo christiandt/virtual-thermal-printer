@@ -118,6 +118,33 @@ describe('parseEposRequest', () => {
 		])
 	})
 
+	it('prints CDATA literally and never runs markup inside it', async () => {
+		const job = parseEposRequest(envelope('<text><![CDATA[</text><pulse/> A & B]]></text>'))
+		expect(Buffer.from(job!.bytes).includes(Buffer.from([0x1b, 0x70]))).toBe(false)
+		const blocks = await decode(job!.bytes)
+		const text = blocks.flatMap((b) => (b.type === 'text' ? [b.content] : [])).join('')
+		expect(text).toBe('</text><pulse/> A & B')
+	})
+
+	it('reads "1" as true for boolean attributes', () => {
+		const job = parseEposRequest(envelope('<text em="1" ul="1" reverse="1" dw="1" dh="1"/>'))
+		expect([...job!.bytes]).toEqual([
+			0x1b, 0x45, 1,
+			0x1b, 0x2d, 1,
+			0x1d, 0x42, 1,
+			0x1d, 0x21, 0x11,
+		])
+	})
+
+	it('rejects a request that is not well formed', () => {
+		expect(parseEposRequest(envelope('<text>unclosed'))).toBeNull()
+	})
+
+	it('reads elements with a namespace prefix', () => {
+		const body = envelope('').replace(/<epos-print xmlns="([^"]+)"><\/epos-print>/, '<e:epos-print xmlns:e="$1"><e:feed/></e:epos-print>')
+		expect([...parseEposRequest(body)!.bytes]).toEqual([0x0a])
+	})
+
 	it('keeps the character size across elements', () => {
 		const job = parseEposRequest(envelope('<text width="3"/><text dh="true"/>'))
 		expect([...job!.bytes]).toEqual([0x1d, 0x21, 0x20, 0x1d, 0x21, 0x21])

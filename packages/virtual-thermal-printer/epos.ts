@@ -60,19 +60,120 @@ function parseAttributes(source: string): Record<string, string> {
 	return attributes
 }
 
+interface XmlElement {
+	/** Local name, without a namespace prefix. */
+	name: string
+	attributes: Record<string, string>
+	children: (XmlElement | string)[]
+}
+
+function localName(name: string): string {
+	return name.slice(name.indexOf(':') + 1)
+}
+
+/** A small XML reader: elements, attributes, text, CDATA and entities;
+ *  comments, processing instructions and declarations are skipped. Null when
+ *  the document is not well formed. */
+function parseXml(source: string): XmlElement | null {
+	const root: XmlElement = { name: '', attributes: {}, children: [] }
+	const stack = [root]
+	const addText = (text: string) => {
+		if (text) stack[stack.length - 1].children.push(text)
+	}
+	let i = 0
+	while (i < source.length) {
+		const lt = source.indexOf('<', i)
+		if (lt === -1) {
+			addText(decodeXmlText(source.slice(i)))
+			break
+		}
+		addText(decodeXmlText(source.slice(i, lt)))
+		const skipTo = (terminator: string, from: number): number => {
+			const end = source.indexOf(terminator, from)
+			return end === -1 ? -1 : end + terminator.length
+		}
+		if (source.startsWith('<!--', lt)) {
+			i = skipTo('-->', lt + 4)
+		} else if (source.startsWith('<![CDATA[', lt)) {
+			const end = source.indexOf(']]>', lt + 9)
+			if (end !== -1) addText(source.slice(lt + 9, end))
+			i = end === -1 ? -1 : end + 3
+		} else if (source.startsWith('<?', lt)) {
+			i = skipTo('?>', lt + 2)
+		} else if (source.startsWith('<!', lt)) {
+			i = skipTo('>', lt + 2)
+		} else {
+			// The tag runs to the first '>' outside a quoted attribute value.
+			let end = lt + 1
+			let quote = ''
+			for (; end < source.length; end++) {
+				const c = source[end]
+				if (quote) {
+					if (c === quote) quote = ''
+				} else if (c === '"' || c === "'") {
+					quote = c
+				} else if (c === '>') {
+					break
+				}
+			}
+			if (end >= source.length) return null
+			const tag = source.slice(lt + 1, end)
+			i = end + 1
+			if (tag.startsWith('/')) {
+				const open = stack.pop()
+				if (stack.length === 0 || open?.name !== localName(tag.slice(1).trim())) return null
+				continue
+			}
+			const selfClosing = tag.endsWith('/')
+			const match = (selfClosing ? tag.slice(0, -1) : tag).match(/^([^\s/]+)([\s\S]*)$/)
+			if (!match) return null
+			const element: XmlElement = {
+				name: localName(match[1]),
+				attributes: parseAttributes(match[2]),
+				children: [],
+			}
+			stack[stack.length - 1].children.push(element)
+			if (!selfClosing) stack.push(element)
+		}
+		if (i === -1) return null
+	}
+	return stack.length === 1 ? root : null
+}
+
+function findElement(element: XmlElement, name: string): XmlElement | null {
+	for (const child of element.children) {
+		if (typeof child === 'string') continue
+		if (child.name === name) return child
+		const found = findElement(child, name)
+		if (found) return found
+	}
+	return null
+}
+
+function textContent(element: XmlElement): string {
+	return element.children
+		.map((child) => (typeof child === 'string' ? child : textContent(child)))
+		.join('')
+}
+
+/** ePOS-Print booleans: "true" or "1". */
+function flag(value: string): number {
+	return value === 'true' || value === '1' ? 1 : 0
+}
+
 function byte(value: number): number {
 	return Math.max(0, Math.min(255, Math.round(value)))
 }
 
 /** Parse an ePOS-Print request; null when it holds no <epos-print> element. */
 export function parseEposRequest(body: string): EposJob | null {
-	// Commented-out elements are not part of the job.
-	body = body.replace(/<!--[\s\S]*?-->/g, '')
-	const eposPrint = body.match(/<epos-print\b[^>]*?(?:\/>|>([\s\S]*?)<\/epos-print\s*>)/)
-	if (!eposPrint) {
+	const document = parseXml(body)
+	const eposPrint = document && findElement(document, 'epos-print')
+	if (!document || !eposPrint) {
 		return null
 	}
-	const printJobId = body.match(/<printjobid>([^<]*)<\/printjobid>/)?.[1]?.trim() || null
+	const jobIdElement = findElement(document, 'printjobid')
+	const printJobId = (jobIdElement && textContent(jobIdElement).trim()) || null
 
 	const out: number[] = []
 	const unsupported: string[] = []
@@ -82,30 +183,29 @@ export function parseEposRequest(body: string): EposJob | null {
 	let width = 1
 	let height = 1
 
-	const elements = (eposPrint[1] ?? '').matchAll(
-		/<([A-Za-z][\w-]*)((?:\s+[\w:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(?:\/>|>([\s\S]*?)<\/\1\s*>)/g,
-	)
-	for (const [, name, attributeSource, content] of elements) {
+	for (const element of eposPrint.children) {
+		if (typeof element === 'string') continue
 		elementCount++
-		const a = parseAttributes(attributeSource)
-		switch (name) {
+		const a = element.attributes
+		const content = textContent(element)
+		switch (element.name) {
 			case 'text': {
 				if (a.align in ALIGNMENTS) out.push(ESC, 0x61, ALIGNMENTS[a.align])
 				if (a.font in FONTS) out.push(ESC, 0x4d, FONTS[a.font])
-				if (a.em) out.push(ESC, 0x45, a.em === 'true' ? 1 : 0)
-				if (a.ul) out.push(ESC, 0x2d, a.ul === 'true' ? 1 : 0)
-				if (a.reverse) out.push(GS, 0x42, a.reverse === 'true' ? 1 : 0)
+				if (a.em) out.push(ESC, 0x45, flag(a.em))
+				if (a.ul) out.push(ESC, 0x2d, flag(a.ul))
+				if (a.reverse) out.push(GS, 0x42, flag(a.reverse))
 				if (a.linespc) out.push(ESC, 0x33, byte(Number(a.linespc)))
 				if (a.width || a.height || a.dw || a.dh) {
 					if (a.width) width = Number(a.width)
 					if (a.height) height = Number(a.height)
-					if (a.dw) width = a.dw === 'true' ? 2 : 1
-					if (a.dh) height = a.dh === 'true' ? 2 : 1
+					if (a.dw) width = flag(a.dw) + 1
+					if (a.dh) height = flag(a.dh) + 1
 					width = Math.max(1, Math.min(8, width || 1))
 					height = Math.max(1, Math.min(8, height || 1))
 					out.push(GS, 0x21, ((width - 1) << 4) | (height - 1))
 				}
-				const text = decodeXmlText(content ?? '')
+				const text = content
 				if (text) {
 					if (!selectedCodeTable) {
 						out.push(ESC, 0x74, CODE_TABLE_WPC1252)
@@ -134,7 +234,7 @@ export function parseEposRequest(body: string): EposJob | null {
 				break
 			}
 			case 'command': {
-				const hex = (content ?? '').replace(/\s+/g, '')
+				const hex = content.replace(/\s+/g, '')
 				const raw: number[] = []
 				for (let i = 0; i + 1 < hex.length; i += 2) {
 					raw.push(parseInt(hex.slice(i, i + 2), 16))
@@ -148,7 +248,7 @@ export function parseEposRequest(body: string): EposJob | null {
 				break
 			}
 			default:
-				unsupported.push(name)
+				unsupported.push(element.name)
 		}
 	}
 
