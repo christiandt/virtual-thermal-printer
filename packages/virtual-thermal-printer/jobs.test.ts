@@ -82,6 +82,34 @@ describe('JobLog', () => {
 		expect(log.list()[0].text).toBe('A\n[image 8×8]\nB\nC')
 	})
 
+	it.each([
+		'Print and Reverse Feed Lines',
+		'Select Page Mode',
+		'Select Standard Mode',
+	])('ends the line on %s', (name) => {
+		const log = new JobLog()
+		const recorder = log.start('epos')
+		recorder.add(text('A'))
+		recorder.add({ type: 'command', name })
+		if (name === 'Select Page Mode') recorder.add({ type: 'command', name: 'Select Standard Mode' })
+		recorder.add(text('B'))
+		recorder.finish()
+		expect(log.list()[0].text).toBe('A\nB')
+	})
+
+	it('ends the row within a page on page layout commands', () => {
+		const log = new JobLog()
+		const recorder = log.start('epos')
+		recorder.add({ type: 'command', name: 'Select Page Mode' })
+		for (const name of ['Set Page Area', 'Select Print Direction', 'Set Absolute Vertical Position', 'Set Relative Vertical Position']) {
+			recorder.add(text(name.split(' ')[1]))
+			recorder.add({ type: 'command', name })
+		}
+		recorder.add({ type: 'command', name: 'Form Feed' })
+		recorder.finish()
+		expect(log.list()[0].text).toBe('Page\nPrint\nAbsolute\nRelative\n')
+	})
+
 	it('prints a page begun in an earlier job', () => {
 		const log = new JobLog()
 		const first = log.start('epos')

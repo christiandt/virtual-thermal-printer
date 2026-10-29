@@ -3,7 +3,23 @@
 // the decoded blocks. An ePOS request is one job, a socket connection is one
 // job. Status requests are not jobs; a job refused while the printer was off
 // line is kept, with printed false and the error code.
+//
+// The text follows the renderer's rows: every command that ends a row there
+// ends a line here. Long lines are deliberately not wrapped at the paper
+// width (that depends on font, size and margins), so each line a POS sent
+// stays whole for assertions.
 import type { ParsedEscPosBlock } from 'escpos-decoder/types'
+
+/** Commands that end the open row in the renderer without a feed of their
+ *  own here. Line feeds, images, cuts and page prints are handled apart. */
+const ROW_ENDING_COMMANDS = new Set([
+	'Print and Feed Paper', // ESC J
+	'Print and Reverse Feed Lines', // ESC e
+	'Set Page Area', // ESC W
+	'Select Print Direction', // ESC T
+	'Set Absolute Vertical Position', // GS $
+	'Set Relative Vertical Position', // GS \
+])
 
 /** How many jobs are kept; older ones are dropped first. */
 export const JOB_LOG_SIZE = 100
@@ -63,10 +79,11 @@ export class JobRecorder {
 			const lines = Number(block.details?.lines ?? 0)
 			if (lines === 0) this.#endLine()
 			else this.#write('\n'.repeat(lines))
-		} else if (block.name === 'Print and Feed Paper') {
-			// ESC J n prints the row and feeds n dots: the row ends here.
+		} else if (ROW_ENDING_COMMANDS.has(block.name)) {
 			this.#endLine()
 		} else if (block.name === 'Select Page Mode') {
+			// The standard-mode row ends before the page begins.
+			this.#endLine()
 			this.#page ??= ''
 		} else if (block.name === 'Print Page') {
 			// ESC FF prints the page and keeps it for further printing.
@@ -77,6 +94,9 @@ export class JobRecorder {
 		} else if (block.name === 'Cancel Page Data') {
 			if (this.#page !== null) this.#page = ''
 		} else if (block.name === 'Select Standard Mode' || block.name === 'Initialize Printer') {
+			// Leaving page mode drops the unprinted page with its open row; in
+			// standard mode ESC S ends the row.
+			if (this.#page === null && block.name === 'Select Standard Mode') this.#endLine()
 			this.#page = null
 		} else if (block.name === 'Cut Paper') {
 			// A cut ends the row in standard mode, as in the renderer.
