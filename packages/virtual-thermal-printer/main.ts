@@ -11,6 +11,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { isSea, getAsset } from 'node:sea'
 import { handleConnection, processEscPosStream } from './escpos.js'
+import { ASB_DRAWER_KICK, ASB_PRINT_SUCCESS, eposResponse, parseEposRequest } from './epos.js'
+import { CashDrawer } from './drawer.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -59,35 +61,44 @@ const app = new Hono()
 app.get('/health', (context) => context.text('OK'))
 app.get('/version', (context) => context.text(appVersion))
 
+const drawer = new CashDrawer()
+const handleBlock = drawer.handleBlock.bind(drawer)
+
 const eposEndpoint = '/cgi-bin/epos/service.cgi'
 app.use(eposEndpoint, cors())
 app.post(eposEndpoint, async (context) => {
-	const requestBody = await context.req.text()
-
-	const commandMatch = requestBody.match(/<command>([^<]+)<\/command>/)
-	if (!commandMatch || !commandMatch[1]) {
+	const job = parseEposRequest(await context.req.text())
+	if (!job) {
 		return context.text('Invalid ePOS request', 400)
 	}
+	if (job.unsupported.length > 0) {
+		console.log(`ePOS elements not supported, skipped: ${[...new Set(job.unsupported)].join(', ')}.`)
+	}
 
-	const hexCommand = commandMatch[1]
-	const commandBytes = new Uint8Array(
-		hexCommand.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16)),
-	)
+	if (!job.isStatusRequest) {
+		const stream = new ReadableStream({
+			start(controller) {
+				controller.enqueue(job.bytes)
+				controller.close()
+			},
+		})
+		await processEscPosStream(stream, connectedClients, handleBlock)
+	}
 
-	const stream = new ReadableStream({
-		start(controller) {
-			controller.enqueue(commandBytes)
-			controller.close()
-		},
+	const status = ASB_PRINT_SUCCESS | (drawer.isOpen ? ASB_DRAWER_KICK : 0)
+	return context.text(eposResponse(status, job.printJobId), 200, {
+		'Content-Type': 'text/xml',
 	})
+})
 
-	await processEscPosStream(stream, connectedClients)
-
-	return context.text(
-		`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><response xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print" success="true" code="" status="0" batterystatus="0" printjobid="2" /></s:Body></s:Envelope>`,
-		200,
-		{ 'Content-Type': 'text/xml' },
-	)
+app.get('/drawer', (context) => context.json(drawer.state))
+app.post('/drawer/open', (context) => {
+	drawer.set(true)
+	return context.json(drawer.state)
+})
+app.post('/drawer/close', (context) => {
+	drawer.set(false)
+	return context.json(drawer.state)
 })
 
 if (isSea()) {
@@ -149,6 +160,7 @@ server.on('upgrade', (request, socket, head) => {
 wss.on('connection', (ws) => {
 	console.log('WebSocket opened.')
 	connectedClients.add(ws)
+	ws.send(JSON.stringify(drawer.state))
 	ws.on('close', () => {
 		console.log('WebSocket closed.')
 		connectedClients.delete(ws)
@@ -159,8 +171,15 @@ wss.on('connection', (ws) => {
 	})
 })
 
+drawer.onChange((state) => {
+	const message = JSON.stringify(state)
+	for (const client of connectedClients) {
+		client.send(message)
+	}
+})
+
 const escposServer = createServer((socket) => {
-	handleConnection(socket, connectedClients)
+	handleConnection(socket, connectedClients, handleBlock)
 })
 escposServer.listen(socketPort, '0.0.0.0', () => {
 	console.log(`Listening to Socket on port ${socketPort}.`)
